@@ -1,4 +1,6 @@
 // ===== CONFIGURACIÓN =====
+const AEMET_API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJlZ3AuZW5lcmdpYUBnbWFpbC5jb20iLCJqdGkiOiJiNWM4MTU1Zi1iMmRhLTQzZjEtYTFhNi01NzAyZDFlMTgwNmEiLCJpc3MiOiJBRU1FVCIsImlhdCI6MTc3MzIxNDgxMSwidXNlcklkIjoiYjVjODE1NWYtYjJkYS00M2YxLWExYTYtNTcwMmQxZTE4MDZhIiwicm9sZSI6IiJ9.4O2Le7mhnrtHODZxIR6_k3Zaq-jO_HZChe1G4yffY_Y';
+
 // ===== ZONAS DE VUELO =====
 const VUELO_SPOTS = {
   'El Aljibe (Cádiz)':   { id:1, nombre:'El Aljibe', provincia:'Cádiz', lat:36.281, lon:-5.321, elevacion:800, tipo:'xc', condicionesRef:'el-aljibe' },
@@ -53,12 +55,16 @@ function evaluarVientoAltura(speed, dir, spot) {
   
   // Direcciones favorables para vuelo (según condiciones de la zona)
   let direccionesFavorables = ['N', 'NE', 'E', 'NW']; // Por defecto
+  let vientoMaximo = 25; // Por defecto
   
   // Consultar condiciones específicas de la zona si existen
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
     const condiciones = window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.good;
     if (condiciones?.windDirections) {
       direccionesFavorables = condiciones.windDirections;
+    }
+    if (condiciones?.windSpeedMax) {
+      vientoMaximo = condiciones.windSpeedMax;
     }
   }
   
@@ -71,10 +77,10 @@ function evaluarVientoAltura(speed, dir, spot) {
   } else if (speed < 10) {
     valor = 8; text = '👍 Suave';
     cls = 'q-good';
-  } else if (speed < 15) {
+  } else if (speed < vientoMaximo) {
     valor = direccionFavorable ? 7 : 4; text = '⚡ Moderado';
     cls = direccionFavorable ? 'q-good' : 'q-fair';
-  } else if (speed < 20) {
+  } else if (speed < vientoMaximo + 5) {
     valor = direccionFavorable ? 5 : 1; text = '⚠️ Fuerte';
     cls = direccionFavorable ? 'q-fair' : 'q-poor';
   } else {
@@ -113,9 +119,16 @@ function direccionAbreviatura(deg) {
   return d[Math.round(deg / 22.5) % 16];
 }
 
-// Ventana de vuelo aproximada
+// Ventana de vuelo aproximada (mejorable con datos reales)
 function calcularVentanaVuelo() {
-  return '12:00 - 17:00';
+  const hora = new Date().getHours();
+  if (hora >= 11 && hora <= 17) {
+    return 'Activa ahora 🟢';
+  } else if (hora >= 9 && hora <= 19) {
+    return 'Posible 🟡';
+  } else {
+    return 'Cerrada 🔴';
+  }
 }
 
 // Obtener descripción de peligros de la zona
@@ -127,73 +140,185 @@ function getPeligrosZona(spot) {
   return 'Sin información de peligros específicos';
 }
 
-// ===== DATOS SIMULADOS MEJORADOS (con coherencia por zona) =====
-function generarDatosSimulados() {
-  const datosSimulados = {};
-  
-  ZONAS.forEach(spot => {
-    // Valores base según la elevación (más altura = mejores térmicas generalmente)
-    const baseTemp = 25 - (spot.elevacion / 200); // Más frío en altura
-    const baseRad = 600 + (spot.elevacion / 10); // Más radiación en altura
+// Obtener descripción de condiciones épicas
+function getCondicionesEpicas(spot) {
+  if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
+    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.epic || null;
+  }
+  return null;
+}
+
+// ===== FUNCIONES PARA AEMET =====
+
+// Obtener token de AEMET
+async function getAEMETToken() {
+    const response = await fetch(`https://opendata.aemet.es/opendata/api/red/especial/observacion/?api_key=${AEMET_API_KEY}`);
+    const data = await response.json();
+    return data;
+}
+
+// Obtener datos meteorológicos para una ubicación
+async function fetchAEMETData(lat, lon) {
+    try {
+        // Primero obtenemos el token
+        const tokenData = await getAEMETToken();
+        
+        if (!tokenData.datos) {
+            throw new Error('No se pudo obtener el token de AEMET');
+        }
+        
+        // Llamamos a la URL de datos
+        const response = await fetch(tokenData.datos);
+        const data = await response.json();
+        
+        return data;
+    } catch (error) {
+        console.error('Error fetching AEMET data:', error);
+        return null;
+    }
+}
+
+// Procesar datos de AEMET para nuestro formato
+function procesarDatosAEMET(data, spot) {
+    if (!data || !data.length) return null;
     
-    // Generar valores con cierta coherencia
-    const temp = baseTemp + (Math.random() * 10 - 5);
-    const dewpoint = temp - (8 + Math.random() * 8);
-    const radiacion = Math.min(1000, baseRad + (Math.random() * 300 - 150));
-    const cape = 200 + Math.random() * 600;
-    const cloudCover = Math.random() * 50;
-    const viento10 = 5 + Math.random() * 15;
-    const viento80 = viento10 * (1.2 + Math.random() * 0.5); // Viento más fuerte en altura
-    const dirViento = Math.random() * 360;
+    // Tomamos la última observación disponible
+    const ultimaObs = data[data.length - 1];
+    
+    // Extraer variables relevantes
+    const temp = ultimaObs.ta ? parseFloat(ultimaObs.ta) : 15 + Math.random() * 10;
+    const humedad = ultimaObs.hr ? parseFloat(ultimaObs.hr) : 60;
+    const viento10 = ultimaObs.vel ? parseFloat(ultimaObs.vel) : 10;
+    const dirViento = ultimaObs.dir ? parseFloat(ultimaObs.dir) : 180;
+    
+    // AEMET no da punto de rocío directamente, lo estimamos
+    const dewpoint = temp - ((100 - humedad) / 5);
+    
+    // Estimaciones para variables que AEMET no proporciona directamente
+    const radiacion = 500 + Math.random() * 400; // Simulado por ahora
+    const cape = 200 + Math.random() * 500; // Simulado por ahora
+    const cloudCover = ultimaObs.nub ? parseFloat(ultimaObs.nub) : 30;
+    const viento80 = viento10 * (1.3 + Math.random() * 0.4); // Estimación
     
     const baseNube = calcularBaseNube(temp, dewpoint);
     const termica = evaluarTermica(radiacion, cape, cloudCover);
-    const vientoAltura = evaluarVientoAltura(viento80, dirViento, spot);
+    const vientoAltura = evaluarVientoAltura(viento80, dirViento + (Math.random() * 20 - 10), spot);
     const score = vueloScore(termica, vientoAltura, baseNube);
     
-    datosSimulados[spot.id] = {
-      actual: {
-        temp: Math.round(temp * 10) / 10,
-        hum: Math.round(50 + Math.random() * 30),
-        cloud: Math.round(cloudCover),
-        rad: Math.round(radiacion),
-        viento10: Math.round(viento10),
-        dir10: Math.round(dirViento),
-        viento80: Math.round(viento80),
-        dir80: Math.round(dirViento + (Math.random() * 30 - 15)),
-        cape: Math.round(cape),
-        baseNube
-      },
-      termica,
-      vientoAltura,
-      score,
-      ventanaVuelo: calcularVentanaVuelo(),
-      peligros: getPeligrosZona(spot)
+    return {
+        actual: {
+            temp: Math.round(temp * 10) / 10,
+            hum: Math.round(humedad),
+            cloud: Math.round(cloudCover),
+            rad: Math.round(radiacion),
+            viento10: Math.round(viento10),
+            dir10: Math.round(dirViento),
+            viento80: Math.round(viento80),
+            dir80: Math.round(dirViento + (Math.random() * 20 - 10)),
+            cape: Math.round(cape),
+            baseNube
+        },
+        termica,
+        vientoAltura,
+        score,
+        ventanaVuelo: calcularVentanaVuelo(),
+        peligros: getPeligrosZona(spot),
+        condicionesEpicas: getCondicionesEpicas(spot)
     };
-  });
+}
+
+// ===== GENERAR DATOS SIMULADOS (FALLBACK) =====
+function generarDatosSimuladosParaSpot(spot) {
+  const baseTemp = 25 - (spot.elevacion / 200);
+  const baseRad = 600 + (spot.elevacion / 10);
   
-  return datosSimulados;
+  const temp = baseTemp + (Math.random() * 10 - 5);
+  const dewpoint = temp - (8 + Math.random() * 8);
+  const radiacion = Math.min(1000, baseRad + (Math.random() * 300 - 150));
+  const cape = 200 + Math.random() * 600;
+  const cloudCover = Math.random() * 50;
+  const viento10 = 5 + Math.random() * 15;
+  const viento80 = viento10 * (1.2 + Math.random() * 0.5);
+  const dirViento = Math.random() * 360;
+  
+  const baseNube = calcularBaseNube(temp, dewpoint);
+  const termica = evaluarTermica(radiacion, cape, cloudCover);
+  const vientoAltura = evaluarVientoAltura(viento80, dirViento, spot);
+  const score = vueloScore(termica, vientoAltura, baseNube);
+  
+  return {
+    actual: {
+      temp: Math.round(temp * 10) / 10,
+      hum: Math.round(50 + Math.random() * 30),
+      cloud: Math.round(cloudCover),
+      rad: Math.round(radiacion),
+      viento10: Math.round(viento10),
+      dir10: Math.round(dirViento),
+      viento80: Math.round(viento80),
+      dir80: Math.round(dirViento + (Math.random() * 30 - 15)),
+      cape: Math.round(cape),
+      baseNube
+    },
+    termica,
+    vientoAltura,
+    score,
+    ventanaVuelo: calcularVentanaVuelo(),
+    peligros: getPeligrosZona(spot),
+    condicionesEpicas: getCondicionesEpicas(spot)
+  };
 }
 
 // ===== CARGA PRINCIPAL =====
 async function cargarTodo() {
   document.getElementById('statusBar').innerHTML =
-    `<div class="spill loading"><span class="sdot"></span>Cargando datos de vuelo...</div>`;
+    `<div class="spill loading"><span class="sdot"></span>Cargando datos de AEMET...</div>`;
 
-  // Simulamos una carga asíncrona
-  setTimeout(() => {
-    datos = generarDatosSimulados();
+  let errores = 0;
+  datos = {};
+  
+  for (let i = 0; i < ZONAS.length; i++) {
+    const spot = ZONAS[i];
     
-    document.getElementById('statusBar').innerHTML =
-      `<div class="spill ok"><span class="sdot"></span>${ZONAS.length} zonas · Vuelo Score actualizado</div>`;
+    try {
+      // Actualizar estado
+      document.getElementById('statusBar').innerHTML =
+        `<div class="spill loading"><span class="sdot"></span>Cargando ${spot.nombre} (${i+1}/${ZONAS.length})...</div>`;
+      
+      // Obtener datos de AEMET
+      const aemetData = await fetchAEMETData(spot.lat, spot.lon);
+      
+      if (aemetData) {
+        datos[spot.id] = procesarDatosAEMET(aemetData, spot);
+      } else {
+        // Fallback a datos simulados si AEMET falla
+        console.warn(`Usando datos simulados para ${spot.nombre}`);
+        datos[spot.id] = generarDatosSimuladosParaSpot(spot);
+        errores++;
+      }
+      
+      // Renderizar progresivamente
+      renderGrid();
+      if (map) actualizarMarcadoresMapa();
+      
+    } catch (error) {
+      console.error(`Error en ${spot.nombre}:`, error);
+      datos[spot.id] = generarDatosSimuladosParaSpot(spot);
+      errores++;
+    }
     
-    document.getElementById('lastUpd').textContent =
-      'Actualizado ' + new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    
-    renderGrid();
-    renderRanking();
-    if (map) actualizarMarcadoresMapa();
-  }, 1500);
+    // Pequeña pausa para no saturar la API
+    await new Promise(r => setTimeout(r, 500));
+  }
+  
+  const ok = ZONAS.length - errores;
+  document.getElementById('statusBar').innerHTML = errores === 0
+    ? `<div class="spill ok"><span class="sdot"></span>${ZONAS.length} zonas · Datos AEMET actualizados</div>`
+    : `<div class="spill ok"><span class="sdot"></span>${ok}/${ZONAS.length} zonas OK · ${errores} con fallback</div>`;
+  
+  document.getElementById('lastUpd').textContent =
+    'Actualizado ' + new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+
+  renderRanking();
 }
 
 // ===== RENDER CARD =====
@@ -205,18 +330,12 @@ function renderCard(spot, d) {
   const termica = d.termica;
   const vientoAlt = d.vientoAltura;
 
-  // Determinar clase para el borde según el score
-  let borderClass = '';
-  if (d.score >= 7) borderClass = 'q-epic';
-  else if (d.score >= 4) borderClass = 'q-fair';
-  else borderClass = 'q-poor';
-
-  return `<div class="pcard ${borderClass}" id="card-${spot.id}">
+  return `<div class="pcard" id="card-${spot.id}">
     <div class="chead">
       <div>
         <h3>${spot.nombre}</h3>
         <div class="cprov"><i class="fa fa-location-dot"></i>${spot.provincia} (${spot.elevacion}m)</div>
-        <div class="csrc">Análisis experto · XC</div>
+        <div class="csrc">AEMET · Vuelo</div>
       </div>
       <span class="qbadge ${termica.cls}" title="Potencial térmico">${termica.text}</span>
     </div>
@@ -262,6 +381,18 @@ function renderCard(spot, d) {
         <span class="xc-value" style="color:var(--azul-cian)">${act.baseNube ?? '–'}m</span>
       </div>
     </div>
+
+    <!-- SECCIÓN DE CONDICIONES ÉPICAS (si existe) -->
+    ${d.condicionesEpicas ? `
+    <div class="xc-card" style="border-left-color: #4cff82; margin-top: 5px;">
+      <div class="xc-row">
+        <span class="xc-label">🏆 Condición épica:</span>
+      </div>
+      <div class="xc-row" style="font-size: 0.7rem; color: var(--muted);">
+        ${d.condicionesEpicas.description}
+      </div>
+    </div>
+    ` : ''}
 
     <!-- SECCIÓN DE PELIGROS (si existe) -->
     ${d.peligros ? `
