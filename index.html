@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<title>Andalusian Paragliding</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="style_parapente.css"> <!-- Posible nuevo CSS -->
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <span class="star-red">★</span>
+    <div class="andalucian-text">
+      <span class="mn">ANDALUSIAN PARAGLIDING</span>
+      <span class="sub">ANÁLISIS DE VUELO EXPERTO</span>
+    </div>
+    <span class="star-red">★</span>
+  </div>
+  <div class="hdr-r">
+    <span class="last-upd" id="lastUpd">Cargando...</span>
+    <button class="btn-ref" onclick="recargar()"><i class="fa fa-rotate"></i></button>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="hero-in">
+    <div class="hero-txt">
+      <h2>★ XC Optimizer · Análisis de vuelo experto ★</h2>
+      <p>Datos AEMET · Viento en altura · Convección · Ventanas de vuelo</p>
+    </div>
+    <div class="hero-stats">
+      <div class="hstat"><div class="v" id="sSpots">—</div><div class="l">Zonas</div></div>
+      <div class="hstat"><div class="v" id="sEpic">—</div><div class="l">Épicos</div></div>
+      <div class="hstat"><div class="v" id="sMax">—</div><div class="l">Vuelo (score)</div></div> <!-- Cambiado -->
+    </div>
+  </div>
+</div>
+
+<div class="view-tabs-wrap">
+  <div class="view-tabs">
+    <button class="vtab active" id="btnLista" onclick="setVista('lista')"><i class="fa fa-mountain"></i> Zonas de Vuelo</button> <!-- Icono cambiado -->
+    <button class="vtab" id="btnMapa" onclick="setVista('mapa')"><i class="fa fa-satellite"></i> Mapa</button>
+  </div>
+</div>
+
+<div class="main" id="mainContent">
+  <div class="status-bar" id="statusBar"></div>
+  
+  <!-- RANKING (se rellena dinámicamente) -->
+  <div id="rankingContainer" style="display:none;"></div>
+  
+  <div class="filters">
+    <div class="srch"><i class="fa fa-search"></i><input type="text" id="sInput" placeholder="Buscar zona..." oninput="filtrar()"></div>
+    <div style="display:flex; gap:5px; flex-wrap:wrap; width:100%;">
+      <button class="fbtn active" onclick="setFiltro('todas',this)">Todas</button>
+      <button class="fbtn" onclick="setFiltro('Cádiz',this)">Cádiz</button>
+      <button class="fbtn" onclick="setFiltro('Málaga',this)">Málaga</button>
+      <button class="fbtn" onclick="setFiltro('Granada',this)">Granada</button>
+      <button class="fbtn" onclick="setFiltro('Almería',this)">Almería</button>
+       <button class="fbtn" onclick="setFiltro('Jaén',this)">Jaén</button> <!-- Añadido -->
+    </div>
+    <select class="fsort" id="sortSel" onchange="renderGrid()">
+      <option value="score" selected>Ordenar: Vuelo Score</option>
+      <option value="termica">Potencial Térmico</option> <!-- Cambiado -->
+    </select>
+  </div>
+
+  <div class="pgrid" id="pgrid"></div>
+</div>
+
+<div id="mapaOverlay">
+  <div class="mapa-topbar">
+    <div class="mapa-title"><i class="fa fa-satellite"></i><span>Vuelo Map · Andalucía</span></div>
+    <div class="layer-pills">
+      <button class="lpill active" onclick="setLayer('sat',this)"><i class="fa fa-satellite"></i><span> Satélite</span></button>
+      <button class="lpill" onclick="setLayer('clouds',this)"><i class="fa fa-cloud"></i><span> Nubes</span></button> <!-- Cambiado -->
+    </div>
+    <button class="btn-cerrar-mapa" onclick="cerrarMapa()"><i class="fa fa-times"></i></button>
+  </div>
+  <div class="mapa-body">
+    <div id="mapaLeaflet"></div>
+    <div class="mapa-legend" id="mapLegend">
+      <div class="lt">SATÉLITE</div>
+      <div class="leg-item">🌍 Imagen satélite</div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<footer>
+  <div class="fs">★ ★</div>
+  <p><strong>Andalusian Paragliding</strong> · Datos AEMET · Vuelo Score Profesional</p>
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="script_parapente.js"></script> <!-- Nuevo JS -->
+</body>
+</html>
