@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-<title>Andalusian Paragliding</title>
+<title>Andalusian Paragliding - XC Optimizer</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <link rel="stylesheet" href="style.css">
@@ -28,20 +28,20 @@
 <div class="hero">
   <div class="hero-in">
     <div class="hero-txt">
-      <h2>★ XC Optimizer · Análisis de vuelo experto ★</h2>
-      <p>Datos AEMET · Viento en altura · Convección · Ventanas de vuelo</p>
+      <h2>★ XC Optimizer 2.0 · Análisis de vuelo experto ★</h2>
+      <p>Open-Meteo + OpenWeatherMap · Viento en altura · Convección · Condiciones óptimas por zona</p>
     </div>
     <div class="hero-stats">
       <div class="hstat"><div class="v" id="sSpots">—</div><div class="l">Zonas</div></div>
       <div class="hstat"><div class="v" id="sEpic">—</div><div class="l">Épicos</div></div>
-      <div class="hstat"><div class="v" id="sMax">—</div><div class="l">Vuelo (score)</div></div> <!-- Cambiado -->
+      <div class="hstat"><div class="v" id="sMax">—</div><div class="l">Vuelo (score)</div></div>
     </div>
   </div>
 </div>
 
 <div class="view-tabs-wrap">
   <div class="view-tabs">
-    <button class="vtab active" id="btnLista" onclick="setVista('lista')"><i class="fa fa-mountain"></i> Zonas de Vuelo</button> <!-- Icono cambiado -->
+    <button class="vtab active" id="btnLista" onclick="setVista('lista')"><i class="fa fa-mountain"></i> Zonas de Vuelo</button>
     <button class="vtab" id="btnMapa" onclick="setVista('mapa')"><i class="fa fa-satellite"></i> Mapa</button>
   </div>
 </div>
@@ -60,11 +60,12 @@
       <button class="fbtn" onclick="setFiltro('Málaga',this)">Málaga</button>
       <button class="fbtn" onclick="setFiltro('Granada',this)">Granada</button>
       <button class="fbtn" onclick="setFiltro('Almería',this)">Almería</button>
-       <button class="fbtn" onclick="setFiltro('Jaén',this)">Jaén</button> <!-- Añadido -->
+       <button class="fbtn" onclick="setFiltro('Jaén',this)">Jaén</button>
     </div>
     <select class="fsort" id="sortSel" onchange="renderGrid()">
       <option value="score" selected>Ordenar: Vuelo Score</option>
-      <option value="termica">Potencial Térmico</option> <!-- Cambiado -->
+      <option value="termica">Potencial Térmico</option>
+      <option value="match">% Condiciones óptimas</option>
     </select>
   </div>
 
@@ -76,7 +77,10 @@
     <div class="mapa-title"><i class="fa fa-satellite"></i><span>Vuelo Map · Andalucía</span></div>
     <div class="layer-pills">
       <button class="lpill active" onclick="setLayer('sat',this)"><i class="fa fa-satellite"></i><span> Satélite</span></button>
-      <button class="lpill" onclick="setLayer('clouds',this)"><i class="fa fa-cloud"></i><span> Nubes</span></button> <!-- Cambiado -->
+      <button class="lpill" onclick="setLayer('clouds',this)"><i class="fa fa-cloud"></i><span> Nubes</span></button>
+      <button class="lpill" onclick="setLayer('precip',this)"><i class="fa fa-cloud-rain"></i><span> Lluvia</span></button>
+      <button class="lpill" onclick="setLayer('wind',this)"><i class="fa fa-wind"></i><span> Viento</span></button>
+      <button class="lpill" onclick="setLayer('temp',this)"><i class="fa fa-temperature-high"></i><span> Temp</span></button>
     </div>
     <button class="btn-cerrar-mapa" onclick="cerrarMapa()"><i class="fa fa-times"></i></button>
   </div>
@@ -93,10 +97,10 @@
 
 <footer>
   <div class="fs">★ ★</div>
-  <p><strong>Andalusian Paragliding</strong> · Datos AEMET · Vuelo Score Profesional</p>
+  <p><strong>Andalusian Paragliding</strong> · Open-Meteo + OpenWeatherMap · Vuelo Score Profesional</p>
 </footer>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="script_parapente.js"></script> <!-- Nuevo JS -->
+<script src="script_parapente.js"></script>
 </body>
 </html>
