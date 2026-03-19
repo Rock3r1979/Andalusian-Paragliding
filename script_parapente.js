@@ -1,5 +1,5 @@
 // ===== CONFIGURACIÓN =====
-const AEMET_API_KEY = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJlZ3AuZW5lcmdpYUBnbWFpbC5jb20iLCJqdGkiOiJiNWM4MTU1Zi1iMmRhLTQzZjEtYTFhNi01NzAyZDFlMTgwNmEiLCJpc3MiOiJBRU1FVCIsImlhdCI6MTc3MzIxNDgxMSwidXNlcklkIjoiYjVjODE1NWYtYjJkYS00M2YxLWExYTYtNTcwMmQxZTE4MDZhIiwicm9sZSI6IiJ9.4O2Le7mhnrtHODZxIR6_k3Zaq-jO_HZChe1G4yffY_Y';
+// Usamos Open-Meteo (no requiere API key y no tiene problemas CORS)
 
 // ===== ZONAS DE VUELO =====
 const VUELO_SPOTS = {
@@ -20,11 +20,11 @@ let map = null, cloudsLayer = null, markersLayer = null;
 
 // ===== FUNCIONES DE CÁLCULO =====
 
-// Calcular altura base de nube (fórmula aproximada)
+// Calcular altura base de nube
 function calcularBaseNube(temp, dewpoint) {
   if (temp == null || dewpoint == null) return null;
   const delta = temp - dewpoint;
-  if (delta < 2) return 300; // Base baja
+  if (delta < 2) return 300;
   return Math.round(delta * 125);
 }
 
@@ -53,11 +53,9 @@ function evaluarVientoAltura(speed, dir, spot) {
   let cls = 'q-poor';
   let text = `💨 ${Math.round(speed)}km/h`;
   
-  // Direcciones favorables para vuelo (según condiciones de la zona)
-  let direccionesFavorables = ['N', 'NE', 'E', 'NW']; // Por defecto
-  let vientoMaximo = 25; // Por defecto
+  let direccionesFavorables = ['N', 'NE', 'E', 'NW'];
+  let vientoMaximo = 25;
   
-  // Consultar condiciones específicas de la zona si existen
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
     const condiciones = window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.good;
     if (condiciones?.windDirections) {
@@ -119,7 +117,7 @@ function direccionAbreviatura(deg) {
   return d[Math.round(deg / 22.5) % 16];
 }
 
-// Ventana de vuelo aproximada (mejorable con datos reales)
+// Ventana de vuelo
 function calcularVentanaVuelo() {
   const hora = new Date().getHours();
   if (hora >= 11 && hora <= 17) {
@@ -131,7 +129,7 @@ function calcularVentanaVuelo() {
   }
 }
 
-// Obtener descripción de peligros de la zona
+// Obtener peligros de la zona
 function getPeligrosZona(spot) {
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
     const peligros = window.VUELO_THRESHOLDS[spot.condicionesRef]?.danger?.notes;
@@ -140,7 +138,7 @@ function getPeligrosZona(spot) {
   return 'Sin información de peligros específicos';
 }
 
-// Obtener descripción de condiciones épicas
+// Obtener condiciones épicas
 function getCondicionesEpicas(spot) {
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
     return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.epic || null;
@@ -148,83 +146,69 @@ function getCondicionesEpicas(spot) {
   return null;
 }
 
-// ===== FUNCIONES PARA AEMET =====
-
-// Obtener token de AEMET
-async function getAEMETToken() {
-    const response = await fetch(`https://opendata.aemet.es/opendata/api/red/especial/observacion/?api_key=${AEMET_API_KEY}`);
+// ===== FUNCIONES PARA OPEN-METEO (sin CORS) =====
+async function fetchOpenMeteoData(lat, lon) {
+  try {
+    const params = new URLSearchParams({
+      latitude: lat,
+      longitude: lon,
+      hourly: 'temperature_2m,relativehumidity_2m,dewpoint_2m,cloudcover,shortwave_radiation,windspeed_10m,winddirection_10m,windspeed_80m,winddirection_80m,cape',
+      current_weather: true,
+      timezone: 'Europe/Madrid'
+    });
+    
+    const response = await fetch(`https://api.open-meteo.com/v1/forecast?${params}`);
     const data = await response.json();
     return data;
+  } catch (error) {
+    console.error('Error fetching Open-Meteo data:', error);
+    return null;
+  }
 }
 
-// Obtener datos meteorológicos para una ubicación
-async function fetchAEMETData(lat, lon) {
-    try {
-        // Primero obtenemos el token
-        const tokenData = await getAEMETToken();
-        
-        if (!tokenData.datos) {
-            throw new Error('No se pudo obtener el token de AEMET');
-        }
-        
-        // Llamamos a la URL de datos
-        const response = await fetch(tokenData.datos);
-        const data = await response.json();
-        
-        return data;
-    } catch (error) {
-        console.error('Error fetching AEMET data:', error);
-        return null;
-    }
-}
-
-// Procesar datos de AEMET para nuestro formato
-function procesarDatosAEMET(data, spot) {
-    if (!data || !data.length) return null;
-    
-    // Tomamos la última observación disponible
-    const ultimaObs = data[data.length - 1];
-    
-    // Extraer variables relevantes
-    const temp = ultimaObs.ta ? parseFloat(ultimaObs.ta) : 15 + Math.random() * 10;
-    const humedad = ultimaObs.hr ? parseFloat(ultimaObs.hr) : 60;
-    const viento10 = ultimaObs.vel ? parseFloat(ultimaObs.vel) : 10;
-    const dirViento = ultimaObs.dir ? parseFloat(ultimaObs.dir) : 180;
-    
-    // AEMET no da punto de rocío directamente, lo estimamos
-    const dewpoint = temp - ((100 - humedad) / 5);
-    
-    // Estimaciones para variables que AEMET no proporciona directamente
-    const radiacion = 500 + Math.random() * 400; // Simulado por ahora
-    const cape = 200 + Math.random() * 500; // Simulado por ahora
-    const cloudCover = ultimaObs.nub ? parseFloat(ultimaObs.nub) : 30;
-    const viento80 = viento10 * (1.3 + Math.random() * 0.4); // Estimación
-    
-    const baseNube = calcularBaseNube(temp, dewpoint);
-    const termica = evaluarTermica(radiacion, cape, cloudCover);
-    const vientoAltura = evaluarVientoAltura(viento80, dirViento + (Math.random() * 20 - 10), spot);
-    const score = vueloScore(termica, vientoAltura, baseNube);
-    
-    return {
-        actual: {
-            temp: Math.round(temp * 10) / 10,
-            hum: Math.round(humedad),
-            cloud: Math.round(cloudCover),
-            rad: Math.round(radiacion),
-            viento10: Math.round(viento10),
-            dir10: Math.round(dirViento),
-            viento80: Math.round(viento80),
-            dir80: Math.round(dirViento + (Math.random() * 20 - 10)),
-            cape: Math.round(cape),
-            baseNube
-        },
-        termica,
-        vientoAltura,
-        score,
-        ventanaVuelo: calcularVentanaVuelo(),
-        peligros: getPeligrosZona(spot),
-        condicionesEpicas: getCondicionesEpicas(spot)
-    };
+function procesarDatosOpenMeteo(data, spot) {
+  if (!data || !data.hourly) return null;
+  
+  // Tomar la hora actual
+  const horaActual = new Date().getHours();
+  const idx = horaActual;
+  
+  const temp = data.hourly.temperature_2m[idx];
+  const humedad = data.hourly.relativehumidity_2m[idx];
+  const dewpoint = data.hourly.dewpoint_2m[idx];
+  const radiacion = data.hourly.shortwave_radiation[idx];
+  const cape = data.hourly.cape[idx];
+  const cloudCover = data.hourly.cloudcover[idx];
+  const viento10 = data.hourly.windspeed_10m[idx];
+  const dirViento = data.hourly.winddirection_10m[idx];
+  const viento80 = data.hourly.windspeed_80m ? data.hourly.windspeed_80m[idx] : viento10 * 1.5;
+  const dir80 = data.hourly.winddirection_80m ? data.hourly.winddirection_80m[idx] : dirViento;
+  
+  const baseNube = calcularBaseNube(temp, dewpoint);
+  const termica = evaluarTermica(radiacion, cape, cloudCover);
+  const vientoAltura = evaluarVientoAltura(viento80, dir80, spot);
+  const score = vueloScore(termica, vientoAltura, baseNube);
+  
+  return {
+    actual: {
+      temp: Math.round(temp * 10) / 10,
+      hum: Math.round(humedad),
+      cloud: Math.round(cloudCover),
+      rad: Math.round(radiacion),
+      viento10: Math.round(viento10),
+      dir10: Math.round(dirViento),
+      viento80: Math.round(viento80),
+      dir80: Math.round(dir80),
+      cape: Math.round(cape),
+      baseNube
+    },
+    termica,
+    vientoAltura,
+    score,
+    ventanaVuelo: calcularVentanaVuelo(),
+    peligros: getPeligrosZona(spot),
+    condicionesEpicas: getCondicionesEpicas(spot)
+  };
 }
 
 // ===== GENERAR DATOS SIMULADOS (FALLBACK) =====
@@ -271,7 +255,7 @@ function generarDatosSimuladosParaSpot(spot) {
 // ===== CARGA PRINCIPAL =====
 async function cargarTodo() {
   document.getElementById('statusBar').innerHTML =
-    `<div class="spill loading"><span class="sdot"></span>Cargando datos de AEMET...</div>`;
+    `<div class="spill loading"><span class="sdot"></span>Cargando datos de Open-Meteo...</div>`;
 
   let errores = 0;
   datos = {};
@@ -280,23 +264,18 @@ async function cargarTodo() {
     const spot = ZONAS[i];
     
     try {
-      // Actualizar estado
       document.getElementById('statusBar').innerHTML =
         `<div class="spill loading"><span class="sdot"></span>Cargando ${spot.nombre} (${i+1}/${ZONAS.length})...</div>`;
       
-      // Obtener datos de AEMET
-      const aemetData = await fetchAEMETData(spot.lat, spot.lon);
+      const meteoData = await fetchOpenMeteoData(spot.lat, spot.lon);
       
-      if (aemetData) {
-        datos[spot.id] = procesarDatosAEMET(aemetData, spot);
+      if (meteoData) {
+        datos[spot.id] = procesarDatosOpenMeteo(meteoData, spot);
       } else {
-        // Fallback a datos simulados si AEMET falla
-        console.warn(`Usando datos simulados para ${spot.nombre}`);
         datos[spot.id] = generarDatosSimuladosParaSpot(spot);
         errores++;
       }
       
-      // Renderizar progresivamente
       renderGrid();
       if (map) actualizarMarcadoresMapa();
       
@@ -306,13 +285,12 @@ async function cargarTodo() {
       errores++;
     }
     
-    // Pequeña pausa para no saturar la API
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 300));
   }
   
   const ok = ZONAS.length - errores;
   document.getElementById('statusBar').innerHTML = errores === 0
-    ? `<div class="spill ok"><span class="sdot"></span>${ZONAS.length} zonas · Datos AEMET actualizados</div>`
+    ? `<div class="spill ok"><span class="sdot"></span>${ZONAS.length} zonas · Datos actualizados</div>`
     : `<div class="spill ok"><span class="sdot"></span>${ok}/${ZONAS.length} zonas OK · ${errores} con fallback</div>`;
   
   document.getElementById('lastUpd').textContent =
@@ -335,12 +313,11 @@ function renderCard(spot, d) {
       <div>
         <h3>${spot.nombre}</h3>
         <div class="cprov"><i class="fa fa-location-dot"></i>${spot.provincia} (${spot.elevacion}m)</div>
-        <div class="csrc">AEMET · Vuelo</div>
+        <div class="csrc">Open-Meteo · Vuelo</div>
       </div>
       <span class="qbadge ${termica.cls}" title="Potencial térmico">${termica.text}</span>
     </div>
 
-    <!-- VUELO SCORE -->
     <div class="surf-score" style="margin-bottom:0;">
       <div class="score-circle ${scoreInfo.cls}" style="border-color:${scoreInfo.color}">${d.score}</div>
       <div class="score-info">
@@ -350,7 +327,6 @@ function renderCard(spot, d) {
       </div>
     </div>
 
-    <!-- MÉTRICAS CLAVE -->
     <div class="srow">
       <div class="sbox"><div class="sv c-ola">${act.temp ?? '–'}°</div><div class="sl">Temp</div></div>
       <div class="sbox"><div class="sv c-per">${act.rad ?? '–'}</div><div class="sl">Rad. <span class="su">W/m²</span></div></div>
@@ -358,7 +334,6 @@ function renderCard(spot, d) {
       <div class="sbox"><div class="sv c-temp" style="color:${vientoAlt.cls === 'q-poor' ? 'var(--rojo)' : 'var(--orange)'}">${act.viento80 ?? '–'}</div><div class="sl">Viento 80m</div></div>
     </div>
 
-    <!-- ANÁLISIS EXPERTO (XCOptimizer) -->
     <div class="xc-card">
       <div class="xc-row">
         <span class="xc-label">💨 Viento 80m:</span>
@@ -382,7 +357,6 @@ function renderCard(spot, d) {
       </div>
     </div>
 
-    <!-- SECCIÓN DE CONDICIONES ÉPICAS (si existe) -->
     ${d.condicionesEpicas ? `
     <div class="xc-card" style="border-left-color: #4cff82; margin-top: 5px;">
       <div class="xc-row">
@@ -394,7 +368,6 @@ function renderCard(spot, d) {
     </div>
     ` : ''}
 
-    <!-- SECCIÓN DE PELIGROS (si existe) -->
     ${d.peligros ? `
     <div class="xc-card" style="border-left-color: var(--rojo); margin-top: 5px;">
       <div class="xc-row">
@@ -422,7 +395,6 @@ function renderGrid() {
 
   document.getElementById('pgrid').innerHTML = lista.map(p => renderCard(p, datos[p.id])).join('');
 
-  // Actualizar stats del hero
   const loaded = Object.values(datos).filter(d => d.score);
   document.getElementById('sSpots').textContent = ZONAS.length;
   document.getElementById('sEpic').textContent = loaded.filter(d => d.score >= 9).length;
@@ -534,7 +506,6 @@ function setLayer(tipo, btn) {
   if (!map) return;
   
   if (tipo === 'clouds') {
-    // Capa de nubes (simulada)
     if (!cloudsLayer) {
       cloudsLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         opacity: 0.3
@@ -566,9 +537,8 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// Asegurarse de que VUELO_THRESHOLDS está cargado
+// Verificar VUELO_THRESHOLDS
 window.addEventListener('load', () => {
-  // Verificar si el archivo de condiciones se cargó
   if (typeof window.VUELO_THRESHOLDS !== 'undefined') {
     console.log('✅ Condiciones de vuelo cargadas:', Object.keys(window.VUELO_THRESHOLDS));
   } else {
