@@ -1,19 +1,33 @@
 // ======================================================
-// ANDALUSIAN PARAGLIDING - XC OPTIMIZER 2.0
-// Análisis de vuelo experto con Open-Meteo + OpenWeatherMap
+// ANDALUSIAN PARAGLIDING - XC OPTIMIZER 3.0
+// ANÁLISIS EXPERTO POR ZONA CON RECOMENDACIONES DE NIVEL
 // ======================================================
 
 // ===== CONFIGURACIÓN =====
 const OPENWEATHER_API_KEY = 'f68b09b09fdd7a9f01593a10c1802e25';
 
-// ===== ZONAS DE VUELO =====
+// ===== ZONAS DE VUELO (ACTUALIZADO CON TODAS) =====
 const VUELO_SPOTS = {
-  'El Aljibe (Cádiz)':   { id:1, nombre:'El Aljibe', provincia:'Cádiz', lat:36.281, lon:-5.321, elevacion:800, tipo:'xc', condicionesRef:'el-aljibe' },
-  'Aculadero (S. Nevada)': { id:2, nombre:'Aculadero', provincia:'Granada', lat:37.087, lon:-3.402, elevacion:2200, tipo:'xc', condicionesRef:'sierra-nevada-aculadero' },
-  'Calar Alto (Almería)': { id:3, nombre:'Calar Alto', provincia:'Almería', lat:37.221, lon:-2.543, elevacion:1950, tipo:'xc', condicionesRef:'calar-alto' },
-  'El Buitre (Málaga)': { id:4, nombre:'El Buitre', provincia:'Málaga', lat:36.890, lon:-4.101, elevacion:1100, tipo:'xc', condicionesRef:'el-buitre' },
-  'Loja (Granada)': { id:5, nombre:'Loja', provincia:'Granada', lat:37.162, lon:-4.154, elevacion:750, tipo:'xc', condicionesRef:'loja' },
-  'Sierra de Cazorla (Jaén)': { id:6, nombre:'Sierra de Cazorla', provincia:'Jaén', lat:37.910, lon:-2.890, elevacion:1500, tipo:'xc', condicionesRef:'cazorla' }
+  // Cádiz
+  'El Aljibe (Cádiz)': { id:1, nombre:'El Aljibe', provincia:'Cádiz', lat:36.281, lon:-5.321, elevacion:800, condicionesRef:'el-aljibe' },
+  
+  // Granada
+  'Cenes de la Vega (Granada)': { id:2, nombre:'Cenes de la Vega', provincia:'Granada', lat:37.159, lon:-3.538, elevacion:1300, condicionesRef:'cenes-monachil' },
+  'Las Sabinas (Sierra Nevada)': { id:3, nombre:'Las Sabinas', provincia:'Granada', lat:37.087, lon:-3.402, elevacion:2000, condicionesRef:'cenes-monachil' },
+  'Cahuchiles (Sierra Nevada)': { id:4, nombre:'Cahuchiles', provincia:'Granada', lat:37.100, lon:-3.380, elevacion:2700, condicionesRef:'sierra-nevada' },
+  'Sierra de Loja': { id:5, nombre:'Sierra de Loja', provincia:'Granada', lat:37.162, lon:-4.154, elevacion:1200, condicionesRef:'sierra-loja' },
+  'Jabalcón (Baza)': { id:6, nombre:'Jabalcón', provincia:'Granada', lat:37.573, lon:-2.714, elevacion:1400, condicionesRef:'jabalcon' },
+  'La Herradura': { id:7, nombre:'La Herradura', provincia:'Granada', lat:36.730, lon:-3.740, elevacion:300, condicionesRef:'la-herradura' },
+  'Otívar': { id:8, nombre:'Otívar', provincia:'Granada', lat:36.820, lon:-3.680, elevacion:500, condicionesRef:'otivar' },
+  
+  // Málaga
+  'El Buitre (Málaga)': { id:9, nombre:'El Buitre', provincia:'Málaga', lat:36.890, lon:-4.101, elevacion:1100, condicionesRef:'el-buitre' },
+  
+  // Almería
+  'Calar Alto (Almería)': { id:10, nombre:'Calar Alto', provincia:'Almería', lat:37.221, lon:-2.543, elevacion:1950, condicionesRef:'calar-alto' },
+  
+  // Jaén
+  'Sierra de Cazorla': { id:11, nombre:'Sierra de Cazorla', provincia:'Jaén', lat:37.910, lon:-2.890, elevacion:1500, condicionesRef:'cazorla' }
 };
 const ZONAS = Object.values(VUELO_SPOTS);
 
@@ -35,23 +49,6 @@ function calcularBaseNube(temp, dewpoint) {
   return Math.round(delta * 125);
 }
 
-// Evaluar fuerza térmica
-function evaluarTermica(radiacion, cape, cloudCover) {
-  if (radiacion == null) return { text: 'Sin datos', cls: 'q-flat', value: 0 };
-  
-  if (radiacion > 800 && cape > 500 && cloudCover < 30) {
-    return { text: '💥 Explosiva', cls: 'q-epic', value: 10 };
-  } else if (radiacion > 700 && cape > 200 && cloudCover < 40) {
-    return { text: '🔥 Muy fuerte', cls: 'q-good', value: 8 };
-  } else if (radiacion > 500 && cape > 100 && cloudCover < 60) {
-    return { text: '👍 Fuerte', cls: 'q-fair', value: 6 };
-  } else if (radiacion > 300 && cloudCover < 70) {
-    return { text: '⚪ Moderada', cls: 'q-poor', value: 4 };
-  } else {
-    return { text: '💨 Nula/Débil', cls: 'q-flat', value: 1 };
-  }
-}
-
 // Dirección en texto
 function direccionAbreviatura(deg) {
   if (deg == null || isNaN(deg)) return '–';
@@ -59,98 +56,98 @@ function direccionAbreviatura(deg) {
   return d[Math.round(deg / 22.5) % 16];
 }
 
-// Ventana de vuelo
+// Ventana de vuelo (mejorada)
 function calcularVentanaVuelo() {
   const hora = new Date().getHours();
-  if (hora >= 11 && hora <= 17) {
-    return 'Activa ahora 🟢';
-  } else if (hora >= 9 && hora <= 19) {
-    return 'Posible 🟡';
+  const mes = new Date().getMonth();
+  
+  // Ajuste según época del año
+  let inicio, fin;
+  if (mes >= 3 && mes <= 8) { // Primavera/Verano
+    inicio = 11; fin = 18;
+  } else { // Otoño/Invierno
+    inicio = 10; fin = 16;
+  }
+  
+  if (hora >= inicio && hora <= fin) {
+    return `🟢 Activa (${inicio}:00-${fin}:00)`;
+  } else if (hora >= inicio-1 && hora <= fin+1) {
+    return `🟡 Posible (${inicio-1}:00-${fin+1}:00)`;
   } else {
-    return 'Cerrada 🔴';
+    return `🔴 Cerrada (mejor ${inicio}:00-${fin}:00)`;
   }
 }
 
-// Obtener condiciones de la zona desde vueloConditions.js
-function getCondicionesZona(spot, tipo = 'good') {
+// Obtener condiciones de la zona
+function getCondicionesZona(spot, tipo = 'epic') {
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
-    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.[tipo] || null;
+    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.[tipo] || 
+           window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.good || null;
   }
   return null;
 }
 
 function getPeligrosZona(spot) {
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
-    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.danger?.notes || null;
+    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.danger || null;
   }
   return null;
 }
 
+function getNoVolarSi(spot) {
+  const peligros = getPeligrosZona(spot);
+  return peligros?.noVolarSi || [];
+}
+
 // ===== FUNCIONES DE ANÁLISIS EXPERTO =====
 
-// Evaluar viento en altura comparando con condiciones óptimas
+// Evaluar viento en altura
 function evaluarVientoAltura(speed, dir, spot) {
-  if (speed == null) return { text: 'Sin datos', cls: 'q-flat', value: 0, direccionFavorable: false, match: 0 };
+  if (speed == null) return { text: 'Sin datos', cls: 'q-flat', value: 0, match: 0, direccionFavorable: false };
   
   const condiciones = getCondicionesZona(spot);
   
-  let direccionesFavorables = ['N', 'NE', 'E', 'NW'];
-  let vientoOptimo = 12;
-  let vientoMaximo = 20;
-  
-  if (condiciones) {
-    if (condiciones.windDirections) direccionesFavorables = condiciones.windDirections;
-    if (condiciones.windSpeedMax) vientoOptimo = condiciones.windSpeedMax;
-  }
+  let direccionesFavorables = condiciones?.windDirections || ['N', 'NE', 'E', 'NW'];
+  let vientoOptimo = condiciones?.windSpeedMax || 15;
   
   const dirTxt = direccionAbreviatura(dir);
   const direccionFavorable = direccionesFavorables.includes(dirTxt);
   
-  // Calcular match percentage (0-100%)
   let match = 0;
-  let valor = 0;
   let cls = 'q-poor';
   let text = `💨 ${Math.round(speed)}km/h`;
 
   if (speed < 5) {
     match = 30;
-    valor = 2;
     text = '🌬️ Calma';
     cls = direccionFavorable ? 'q-fair' : 'q-poor';
   } else if (speed < 10) {
     match = 80;
-    valor = 8;
     text = '👍 Suave';
     cls = 'q-good';
-  } else if (speed <= vientoOptimo + 2) {
+  } else if (speed <= vientoOptimo) {
     match = 100;
-    valor = 10;
     text = '⚡ Óptimo';
     cls = 'q-epic';
-  } else if (speed < vientoOptimo + 5) {
+  } else if (speed <= vientoOptimo + 5) {
     match = 70;
-    valor = 7;
     text = '👍 Moderado';
     cls = 'q-good';
-  } else if (speed < vientoOptimo + 10) {
+  } else if (speed <= vientoOptimo + 10) {
     match = 40;
-    valor = 4;
     text = '⚠️ Fuerte';
     cls = 'q-fair';
   } else {
     match = 10;
-    valor = 1;
     text = '🔴 Muy Fuerte';
     cls = 'q-poor';
   }
   
-  // Penalizar dirección desfavorable
   if (!direccionFavorable) {
-    match = Math.round(match * 0.5);
-    valor = Math.round(valor * 0.5);
+    match = Math.round(match * 0.6);
   }
   
-  return { text, cls, value: valor, direccionFavorable, match };
+  return { text, cls, match, direccionFavorable };
 }
 
 // Evaluar base de nubes
@@ -183,46 +180,46 @@ function evaluarBaseNube(baseNube, spot) {
   return { match, text };
 }
 
-// Evaluar térmicas comparando con condiciones óptimas
-function evaluarTermicaExperta(radiacion, cape, spot) {
-  if (radiacion == null) return { match: 0, text: 'Sin datos', value: 0, cls: 'q-flat' };
+// Evaluar térmicas
+function evaluarTermica(radiacion, cape, cloudCover, spot) {
+  if (radiacion == null) return { match: 0, text: 'Sin datos', cls: 'q-flat' };
   
   const condiciones = getCondicionesZona(spot);
   const capeMinimo = condiciones?.capeMin || 200;
   
   let match = 0;
   let text = '';
-  let value = 0;
   let cls = 'q-poor';
   
   if (radiacion > 800 && cape > capeMinimo * 1.5) {
     match = 100;
     text = '💥 Explosivas';
-    value = 10;
     cls = 'q-epic';
   } else if (radiacion > 700 && cape > capeMinimo) {
     match = 85;
     text = '🔥 Muy fuertes';
-    value = 8;
     cls = 'q-good';
   } else if (radiacion > 500 && cape > capeMinimo * 0.7) {
     match = 70;
     text = '👍 Fuertes';
-    value = 6;
     cls = 'q-fair';
   } else if (radiacion > 300 && cape > 100) {
     match = 50;
     text = '⚪ Moderadas';
-    value = 4;
     cls = 'q-poor';
   } else {
     match = 20;
     text = '💨 Débiles';
-    value = 2;
     cls = 'q-flat';
   }
   
-  return { match, text, value, cls };
+  // Penalizar nubosidad excesiva
+  if (cloudCover > 70) {
+    match = Math.round(match * 0.7);
+    text += ' (nublado)';
+  }
+  
+  return { match, text, cls };
 }
 
 // Evaluar visibilidad
@@ -255,11 +252,26 @@ function evaluarVisibilidad(visibilidad, spot) {
   return { match, text };
 }
 
-// Calcular Vuelo Score experto
-function vueloScoreExperto(termica, viento, baseNube, visibilidad) {
-  if (!termica || !viento) return 0;
+// Evaluar si es épico (todas las condiciones)
+function esDiaEpico(termica, viento, baseNube, visibilidad) {
+  return termica.match >= 85 && viento.match >= 80 && baseNube.match >= 80 && visibilidad.match >= 80;
+}
+
+// Evaluar si es seguro para el nivel del piloto
+function esSeguroParaNivel(nivelPiloto, nivelRecomendado) {
+  const niveles = { 'iniciacion': 1, 'iniciación': 1, 'iniciante': 1,
+                   'intermedio': 2, 'medio': 2,
+                   'avanzado': 3,
+                   'experto': 4 };
   
-  // Pesos: 40% térmicas, 30% viento, 20% base nube, 10% visibilidad
+  const pilotoNum = niveles[nivelPiloto?.toLowerCase()] || 0;
+  const zonaNum = niveles[nivelRecomendado?.toLowerCase()] || 0;
+  
+  return pilotoNum >= zonaNum;
+}
+
+// Calcular Vuelo Score global
+function vueloScoreGlobal(termica, viento, baseNube, visibilidad) {
   let score = 0;
   score += (termica.match || 0) * 0.4;
   score += (viento.match || 0) * 0.3;
@@ -279,7 +291,7 @@ function calidadVuelo(score) {
 
 // ===== FUNCIONES PARA APIs =====
 
-// Open-Meteo (datos de altura, CAPE, térmicas)
+// Open-Meteo
 async function fetchOpenMeteoData(lat, lon) {
   try {
     const params = new URLSearchParams({
@@ -294,12 +306,12 @@ async function fetchOpenMeteoData(lat, lon) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error fetching Open-Meteo data:', error);
+    console.error('Error Open-Meteo:', error);
     return null;
   }
 }
 
-// OpenWeatherMap (visibilidad, rachas, y datos actuales)
+// OpenWeatherMap
 async function fetchOWMData(lat, lon) {
   try {
     const response = await fetch(
@@ -308,7 +320,7 @@ async function fetchOWMData(lat, lon) {
     const data = await response.json();
     return data;
   } catch (error) {
-    console.error('Error fetching OpenWeatherMap data:', error);
+    console.error('Error OpenWeatherMap:', error);
     return null;
   }
 }
@@ -316,7 +328,6 @@ async function fetchOWMData(lat, lon) {
 // Procesar datos combinados
 async function procesarDatosSpot(spot) {
   try {
-    // Obtener datos de ambas APIs
     const [meteoData, owmData] = await Promise.all([
       fetchOpenMeteoData(spot.lat, spot.lon),
       fetchOWMData(spot.lat, spot.lon)
@@ -324,11 +335,10 @@ async function procesarDatosSpot(spot) {
     
     if (!meteoData || !meteoData.hourly) return null;
     
-    // Hora actual
     const horaActual = new Date().getHours();
     const idx = horaActual;
     
-    // Datos de Open-Meteo
+    // Datos Open-Meteo
     const temp = meteoData.hourly.temperature_2m[idx];
     const humedad = meteoData.hourly.relativehumidity_2m[idx];
     const dewpoint = meteoData.hourly.dewpoint_2m[idx];
@@ -337,23 +347,29 @@ async function procesarDatosSpot(spot) {
     const cloudCover = meteoData.hourly.cloudcover[idx];
     const viento10 = meteoData.hourly.windspeed_10m[idx];
     const dirViento = meteoData.hourly.winddirection_10m[idx];
-    const viento80 = meteoData.hourly.windspeed_80m ? meteoData.hourly.windspeed_80m[idx] : viento10 * 1.5;
-    const dir80 = meteoData.hourly.winddirection_80m ? meteoData.hourly.winddirection_80m[idx] : dirViento;
+    const viento80 = meteoData.hourly.windspeed_80m?.[idx] || viento10 * 1.5;
+    const dir80 = meteoData.hourly.winddirection_80m?.[idx] || dirViento;
     
-    // Datos de OpenWeatherMap
-    const visibilidad = owmData?.visibility ? owmData.visibility / 1000 : null; // en km
+    // Datos OpenWeatherMap
+    const visibilidad = owmData?.visibility ? owmData.visibility / 1000 : null;
     const racha = owmData?.wind?.gust || null;
     const presion = owmData?.main?.pressure || null;
     
     // Cálculos
     const baseNube = calcularBaseNube(temp, dewpoint);
-    const termica = evaluarTermicaExperta(radiacion, cape, spot);
-    const vientoAltura = evaluarVientoAltura(viento80, dir80, spot);
+    const termica = evaluarTermica(radiacion, cape, cloudCover, spot);
+    const viento = evaluarVientoAltura(viento80, dir80, spot);
     const baseNubeEval = evaluarBaseNube(baseNube, spot);
     const visibilidadEval = evaluarVisibilidad(visibilidad, spot);
     
-    // Vuelo Score experto
-    const score = vueloScoreExperto(termica, vientoAltura, baseNubeEval, visibilidadEval);
+    // Análisis avanzado
+    const diaEpico = esDiaEpico(termica, viento, baseNubeEval, visibilidadEval);
+    const score = vueloScoreGlobal(termica, viento, baseNubeEval, visibilidadEval);
+    
+    // Obtener condiciones de la zona
+    const condicionesEpicas = getCondicionesZona(spot, 'epic');
+    const condicionesGood = getCondicionesZona(spot, 'good');
+    const peligros = getPeligrosZona(spot);
     
     return {
       actual: {
@@ -371,29 +387,37 @@ async function procesarDatosSpot(spot) {
         racha: racha ? Math.round(racha) : null,
         presion
       },
-      termica,
-      viento: vientoAltura,
-      baseNube: baseNubeEval,
-      visibilidad: visibilidadEval,
+      analisis: {
+        termica,
+        viento,
+        baseNube: baseNubeEval,
+        visibilidad: visibilidadEval
+      },
       score,
+      diaEpico,
       ventanaVuelo: calcularVentanaVuelo(),
-      condicionesOptimas: getCondicionesZona(spot, 'epic'),
-      peligros: getPeligrosZona(spot)
+      condicionesEpicas,
+      condicionesGood,
+      peligros,
+      nivelRecomendado: condicionesEpicas?.nivelRecomendado || 'intermedio',
+      tipoVuelo: condicionesEpicas?.tipoVuelo || 'mixto',
+      mejorEpoca: condicionesEpicas?.mejorEpoca || 'Primavera',
+      noVolarSi: getNoVolarSi(spot)
     };
   } catch (error) {
-    console.error(`Error procesando ${spot.nombre}:`, error);
+    console.error(`Error en ${spot.nombre}:`, error);
     return null;
   }
 }
 
-// ===== GENERAR DATOS SIMULADOS (FALLBACK) =====
+// ===== DATOS SIMULADOS =====
 function generarDatosSimuladosParaSpot(spot) {
+  const condiciones = getCondicionesZona(spot);
   const baseTemp = 25 - (spot.elevacion / 200);
-  const baseRad = 600 + (spot.elevacion / 10);
   
   const temp = baseTemp + (Math.random() * 10 - 5);
   const dewpoint = temp - (8 + Math.random() * 8);
-  const radiacion = Math.min(1000, baseRad + (Math.random() * 300 - 150));
+  const radiacion = 500 + Math.random() * 400;
   const cape = 200 + Math.random() * 600;
   const cloudCover = Math.random() * 50;
   const viento10 = 5 + Math.random() * 15;
@@ -402,11 +426,11 @@ function generarDatosSimuladosParaSpot(spot) {
   const visibilidad = 20 + Math.random() * 30;
   
   const baseNube = calcularBaseNube(temp, dewpoint);
-  const termica = evaluarTermicaExperta(radiacion, cape, spot);
-  const vientoAltura = evaluarVientoAltura(viento80, dirViento, spot);
+  const termica = evaluarTermica(radiacion, cape, cloudCover, spot);
+  const viento = evaluarVientoAltura(viento80, dirViento, spot);
   const baseNubeEval = evaluarBaseNube(baseNube, spot);
   const visibilidadEval = evaluarVisibilidad(visibilidad, spot);
-  const score = vueloScoreExperto(termica, vientoAltura, baseNubeEval, visibilidadEval);
+  const score = vueloScoreGlobal(termica, viento, baseNubeEval, visibilidadEval);
   
   return {
     actual: {
@@ -422,21 +446,29 @@ function generarDatosSimuladosParaSpot(spot) {
       baseNube,
       visibilidad: Math.round(visibilidad * 10) / 10
     },
-    termica,
-    viento: vientoAltura,
-    baseNube: baseNubeEval,
-    visibilidad: visibilidadEval,
+    analisis: {
+      termica,
+      viento,
+      baseNube: baseNubeEval,
+      visibilidad: visibilidadEval
+    },
     score,
+    diaEpico: termica.match >= 85 && viento.match >= 80 && baseNubeEval.match >= 80,
     ventanaVuelo: calcularVentanaVuelo(),
-    condicionesOptimas: getCondicionesZona(spot, 'epic'),
-    peligros: getPeligrosZona(spot)
+    condicionesEpicas: getCondicionesZona(spot, 'epic'),
+    condicionesGood: getCondicionesZona(spot, 'good'),
+    peligros: getPeligrosZona(spot),
+    nivelRecomendado: condiciones?.nivelRecomendado || 'intermedio',
+    tipoVuelo: condiciones?.tipoVuelo || 'mixto',
+    mejorEpoca: condiciones?.mejorEpoca || 'Primavera',
+    noVolarSi: getNoVolarSi(spot)
   };
 }
 
 // ===== CARGA PRINCIPAL =====
 async function cargarTodo() {
   document.getElementById('statusBar').innerHTML =
-    `<div class="spill loading"><span class="sdot"></span>Cargando datos de Open-Meteo + OpenWeatherMap...</div>`;
+    `<div class="spill loading"><span class="sdot"></span>Cargando datos de vuelo (${ZONAS.length} zonas)...</div>`;
 
   let errores = 0;
   let exitos = 0;
@@ -468,30 +500,32 @@ async function cargarTodo() {
       errores++;
     }
     
-    // Pequeña pausa para no saturar APIs
     await new Promise(r => setTimeout(r, 300));
   }
   
   document.getElementById('statusBar').innerHTML = errores === 0
-    ? `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas · APIs combinadas OK</div>`
-    : `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas OK · ${errores} con fallback</div>`;
+    ? `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas · XC Optimizer 3.0 activo</div>`
+    : `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas OK · ${errores} con datos simulados</div>`;
   
   document.getElementById('lastUpd').textContent =
     'Actualizado ' + new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
   renderRanking();
+  renderAlertasSeguridad();
 }
 
-// ===== RENDER CARD =====
+// ===== RENDER CARD (VERSIÓN ULTRA) =====
 function renderCard(spot, d) {
   if (!d) return `<div class="pcard" id="card-${spot.id}"><div class="ldg"><div class="spin"></div><span>Cargando...</span></div></div>`;
   
   const act = d.actual;
+  const analisis = d.analisis;
   const scoreInfo = calidadVuelo(d.score);
   
-  // Determinar clase del borde según el score
+  // Determinar clase del borde
   let borderClass = '';
-  if (d.score >= 7) borderClass = 'q-epic';
+  if (d.diaEpico) borderClass = 'q-epic';
+  else if (d.score >= 7) borderClass = 'q-good';
   else if (d.score >= 5) borderClass = 'q-fair';
   else borderClass = 'q-poor';
 
@@ -500,9 +534,12 @@ function renderCard(spot, d) {
       <div>
         <h3>${spot.nombre}</h3>
         <div class="cprov"><i class="fa fa-location-dot"></i>${spot.provincia} (${spot.elevacion}m)</div>
-        <div class="csrc">Open-Meteo + OpenWeatherMap</div>
+        <div class="csrc">
+          ${d.tipoVuelo} · Nivel: ${d.nivelRecomendado}
+          ${d.diaEpico ? '🔥 DÍA ÉPICO' : ''}
+        </div>
       </div>
-      <span class="qbadge ${d.termica.cls}" title="Potencial térmico">${d.termica.text}</span>
+      <span class="qbadge ${analisis.termica.cls}">${analisis.termica.text}</span>
     </div>
 
     <!-- VUELO SCORE -->
@@ -518,32 +555,32 @@ function renderCard(spot, d) {
     <!-- MÉTRICAS CLAVE -->
     <div class="srow">
       <div class="sbox"><div class="sv c-ola">${act.temp ?? '–'}°</div><div class="sl">Temp</div></div>
-      <div class="sbox"><div class="sv c-per">${act.rad ?? '–'}</div><div class="sl">Rad. <span class="su">W/m²</span></div></div>
+      <div class="sbox"><div class="sv c-per">${act.rad ?? '–'}</div><div class="sl">Rad. W/m²</div></div>
       <div class="sbox"><div class="sv c-wind">${act.viento10 ?? '–'}</div><div class="sl">Viento 10m</div></div>
       <div class="sbox"><div class="sv c-temp">${act.viento80 ?? '–'}</div><div class="sl">Viento 80m</div></div>
     </div>
 
-    <!-- ANÁLISIS XCOptimizer 2.0 -->
+    <!-- ANÁLISIS XCOptimizer 3.0 -->
     <div class="xc-card">
       <div class="xc-row">
         <span class="xc-label">💨 Viento 80m:</span>
-        <span class="xc-value ${d.viento.direccionFavorable ? 'favorable' : 'desfavorable'}">
-          ${direccionAbreviatura(act.dir80)} ${act.viento80}km/h (${d.viento.match}%)
+        <span class="xc-value ${analisis.viento.direccionFavorable ? 'favorable' : 'desfavorable'}">
+          ${direccionAbreviatura(act.dir80)} ${act.viento80}km/h (${analisis.viento.match}%)
         </span>
       </div>
       <div class="xc-row">
         <span class="xc-label">☁️ Base nube:</span>
-        <span class="xc-value" style="color:${d.baseNube.match > 70 ? '#4cff82' : d.baseNube.match > 40 ? 'var(--gold)' : 'var(--rojo)'}">
-          ${act.baseNube ?? '–'}m (${d.baseNube.match}%)
+        <span class="xc-value" style="color:${analisis.baseNube.match > 70 ? '#4cff82' : analisis.baseNube.match > 40 ? 'var(--gold)' : 'var(--rojo)'}">
+          ${act.baseNube ?? '–'}m (${analisis.baseNube.match}%)
         </span>
       </div>
       <div class="xc-row">
         <span class="xc-label">🔥 Térmicas:</span>
-        <span class="xc-value ${d.termica.cls}">${d.termica.match}%</span>
+        <span class="xc-value ${analisis.termica.cls}">${analisis.termica.match}%</span>
       </div>
       <div class="xc-row">
         <span class="xc-label">👁️ Visibilidad:</span>
-        <span class="xc-value">${act.visibilidad ?? '–'}km (${d.visibilidad.match}%)</span>
+        <span class="xc-value">${act.visibilidad ?? '–'}km (${analisis.visibilidad.match}%)</span>
       </div>
       <div class="xc-row">
         <span class="xc-label">⏱️ Ventana:</span>
@@ -552,46 +589,85 @@ function renderCard(spot, d) {
       ${act.racha ? `
       <div class="xc-row">
         <span class="xc-label">💨 Rachas:</span>
-        <span class="xc-value">${act.racha} km/h</span>
+        <span class="xc-value ${act.racha > 30 ? 'desfavorable' : ''}">${act.racha} km/h</span>
       </div>
       ` : ''}
     </div>
 
-    <!-- CONDICIONES ÓPTIMAS (EPIC) -->
-    ${d.condicionesOptimas ? `
+    <!-- CONDICIONES ÉPICAS -->
+    ${d.condicionesEpicas ? `
     <div class="xc-card" style="border-left-color: #4cff82; margin-top: 5px;">
       <div class="xc-row">
         <span class="xc-label">🏆 Condición épica:</span>
       </div>
       <div class="xc-row" style="font-size: 0.7rem; color: var(--muted); flex-wrap: wrap;">
-        ${d.condicionesOptimas.description}
+        ${d.condicionesEpicas.description}
       </div>
-      <div class="xc-row" style="font-size: 0.65rem; margin-top: 5px;">
-        <span>🎯 Viento: ${d.condicionesOptimas.windDirections?.join('/')} ${d.condicionesOptimas.windSpeedMax}km/h · Base >${d.condicionesOptimas.cloudBaseMin}m</span>
+      <div class="xc-row" style="font-size: 0.65rem; margin-top: 5px; justify-content: flex-start; gap: 10px;">
+        <span>🎯 Viento: ${d.condicionesEpicas.windDirections?.join('/')} ${d.condicionesEpicas.windSpeedMax}km/h</span>
+        <span>⬆️ Base >${d.condicionesEpicas.cloudBaseMin}m</span>
       </div>
     </div>
     ` : ''}
 
-    <!-- PELIGROS -->
+    <!-- PELIGROS Y NO VOLAR SI -->
     ${d.peligros ? `
     <div class="xc-card" style="border-left-color: var(--rojo); margin-top: 5px;">
       <div class="xc-row">
         <span class="xc-label">⚠️ Peligros:</span>
       </div>
       <div class="xc-row" style="font-size: 0.7rem; color: var(--rojo);">
-        ${d.peligros}
+        ${d.peligros.notes}
       </div>
+      ${d.noVolarSi && d.noVolarSi.length > 0 ? `
+      <div class="xc-row" style="font-size: 0.7rem; margin-top: 5px;">
+        <span class="xc-label">🚫 NO VOLAR SI:</span>
+        <span>${d.noVolarSi.join(' · ')}</span>
+      </div>
+      ` : ''}
     </div>
     ` : ''}
 
     <!-- MATCH GLOBAL -->
     <div class="cfoot">
-      <div class="stars">Match: ${Math.round((d.termica.match + d.viento.match + d.baseNube.match + d.visibilidad.match) / 4)}%</div>
+      <div class="stars">
+        Match: ${Math.round((analisis.termica.match + analisis.viento.match + analisis.baseNube.match + analisis.visibilidad.match) / 4)}% · 
+        Mejor época: ${d.mejorEpoca}
+      </div>
       <a class="mlink" href="https://maps.google.com/?q=${encodeURIComponent(spot.nombre+' '+spot.provincia)}" target="_blank">
         <i class="fa fa-map-location-dot"></i> Ver mapa
       </a>
     </div>
   </div>`;
+}
+
+// ===== ALERTAS DE SEGURIDAD =====
+function renderAlertasSeguridad() {
+  const alertas = [];
+  
+  ZONAS.forEach(spot => {
+    const d = datos[spot.id];
+    if (!d) return;
+    
+    // Verificar condiciones peligrosas
+    if (d.analisis.viento.match < 30 && d.analisis.viento.match > 0) {
+      alertas.push(`⚠️ Viento desfavorable en ${spot.nombre} (${d.actual.viento80}km/h)`);
+    }
+    if (d.analisis.baseNube.match < 20 && d.analisis.baseNube.match > 0) {
+      alertas.push(`🔴 Base de nubes muy baja en ${spot.nombre}`);
+    }
+    if (d.actual.visibilidad && d.actual.visibilidad < 5) {
+      alertas.push(`🌫️ Mala visibilidad en ${spot.nombre} (${d.actual.visibilidad}km)`);
+    }
+  });
+  
+  if (alertas.length > 0) {
+    const alertaDiv = document.createElement('div');
+    alertaDiv.className = 'alerta';
+    alertaDiv.innerHTML = alertas[0];
+    document.body.appendChild(alertaDiv);
+    setTimeout(() => alertaDiv.remove(), 5000);
+  }
 }
 
 // ===== RENDER GRID =====
@@ -605,18 +681,18 @@ function renderGrid() {
   if (sort === 'score') {
     lista.sort((a, b) => (datos[b.id]?.score ?? 0) - (datos[a.id]?.score ?? 0));
   } else if (sort === 'termica') {
-    lista.sort((a, b) => (datos[b.id]?.termica?.match ?? 0) - (datos[a.id]?.termica?.match ?? 0));
+    lista.sort((a, b) => (datos[b.id]?.analisis?.termica?.match ?? 0) - (datos[a.id]?.analisis?.termica?.match ?? 0));
   } else if (sort === 'match') {
-    const getAvgMatch = (d) => d ? (d.termica.match + d.viento.match + d.baseNube.match + d.visibilidad.match) / 4 : 0;
+    const getAvgMatch = (d) => d ? (d.analisis.termica.match + d.analisis.viento.match + d.analisis.baseNube.match + d.analisis.visibilidad.match) / 4 : 0;
     lista.sort((a, b) => getAvgMatch(datos[b.id]) - getAvgMatch(datos[a.id]));
   }
 
   document.getElementById('pgrid').innerHTML = lista.map(p => renderCard(p, datos[p.id])).join('');
 
-  // Actualizar stats del hero
+  // Actualizar stats
   const loaded = Object.values(datos).filter(d => d.score);
   document.getElementById('sSpots').textContent = ZONAS.length;
-  document.getElementById('sEpic').textContent = loaded.filter(d => d.score >= 9).length;
+  document.getElementById('sEpic').textContent = loaded.filter(d => d.diaEpico).length;
   const maxScore = Math.max(0, ...loaded.map(d => d.score ?? 0));
   document.getElementById('sMax').textContent = maxScore;
   
@@ -677,7 +753,7 @@ function setVista(v) {
 
 function cerrarMapa() { setVista('lista'); }
 
-// ===== MAPA CON CAPAS DE OPENWEATHERMAP =====
+// ===== MAPA =====
 function initMapa() {
   if (map) return;
   map = L.map('mapaLeaflet').setView([36.5, -5.5], 8);
@@ -694,7 +770,6 @@ function setLayer(tipo, btn) {
   
   if (!map) return;
   
-  // Eliminar todas las capas meteorológicas
   if (cloudsLayer) map.removeLayer(cloudsLayer);
   if (precipLayer) map.removeLayer(precipLayer);
   if (windLayer) map.removeLayer(windLayer);
@@ -758,7 +833,7 @@ function actualizarMarcadoresMapa() {
     if (!d) return;
     
     let color = '#8fbc8f';
-    if (d.score >= 9) color = '#4cff82';
+    if (d.diaEpico) color = '#4cff82';
     else if (d.score >= 7) color = '#f5c842';
     else if (d.score >= 5) color = '#3498db';
     else color = '#e74c3c';
@@ -772,10 +847,9 @@ function actualizarMarcadoresMapa() {
     }).addTo(markersLayer);
     
     mk.bindPopup(`<b>${p.nombre}</b><br>
-      Vuelo Score <b>${d.score}/10</b><br>
-      Térmica: ${d.termica.match}%<br>
-      Viento: ${d.viento.match}%<br>
-      Base: ${d.baseNube.match}%<br>
+      Score: ${d.score}/10 · ${d.diaEpico ? '🔥 ÉPICO' : ''}<br>
+      Viento: ${d.analisis.viento.match}% · Térmica: ${d.analisis.termica.match}%<br>
+      Base: ${d.analisis.baseNube.match}% · Nivel: ${d.nivelRecomendado}<br>
       <span style="color:#8fbc8f">${p.provincia}</span>`);
   });
 }
@@ -795,7 +869,7 @@ function toast(msg) {
   setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// Verificar VUELO_THRESHOLDS
+// Verificar condiciones
 window.addEventListener('load', () => {
   if (typeof window.VUELO_THRESHOLDS !== 'undefined') {
     console.log('✅ Condiciones de vuelo cargadas:', Object.keys(window.VUELO_THRESHOLDS));
