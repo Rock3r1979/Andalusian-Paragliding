@@ -1,5 +1,10 @@
+// ======================================================
+// ANDALUSIAN PARAGLIDING - XC OPTIMIZER 2.0
+// Análisis de vuelo experto con Open-Meteo + OpenWeatherMap
+// ======================================================
+
 // ===== CONFIGURACIÓN =====
-// Usamos Open-Meteo (no requiere API key y no tiene problemas CORS)
+const OPENWEATHER_API_KEY = 'f68b09b09fdd7a9f01593a10c1802e25';
 
 // ===== ZONAS DE VUELO =====
 const VUELO_SPOTS = {
@@ -16,9 +21,11 @@ const ZONAS = Object.values(VUELO_SPOTS);
 let datos = {};
 let filtroAct = 'todas';
 let ftxt = '';
-let map = null, cloudsLayer = null, markersLayer = null;
+let map = null;
+let cloudsLayer = null, precipLayer = null, windLayer = null, tempLayer = null;
+let markersLayer = null;
 
-// ===== FUNCIONES DE CÁLCULO =====
+// ===== FUNCIONES DE CÁLCULO BÁSICAS =====
 
 // Calcular altura base de nube
 function calcularBaseNube(temp, dewpoint) {
@@ -45,71 +52,6 @@ function evaluarTermica(radiacion, cape, cloudCover) {
   }
 }
 
-// Evaluar viento en altura
-function evaluarVientoAltura(speed, dir, spot) {
-  if (speed == null) return { text: 'Sin datos', cls: 'q-flat', value: 0, direccionFavorable: false };
-  
-  let valor = 0;
-  let cls = 'q-poor';
-  let text = `💨 ${Math.round(speed)}km/h`;
-  
-  let direccionesFavorables = ['N', 'NE', 'E', 'NW'];
-  let vientoMaximo = 25;
-  
-  if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
-    const condiciones = window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.good;
-    if (condiciones?.windDirections) {
-      direccionesFavorables = condiciones.windDirections;
-    }
-    if (condiciones?.windSpeedMax) {
-      vientoMaximo = condiciones.windSpeedMax;
-    }
-  }
-  
-  const dirTxt = direccionAbreviatura(dir);
-  const direccionFavorable = direccionesFavorables.includes(dirTxt);
-
-  if (speed < 5) {
-    valor = 2; text = '🌬️ Calma';
-    cls = direccionFavorable ? 'q-fair' : 'q-poor';
-  } else if (speed < 10) {
-    valor = 8; text = '👍 Suave';
-    cls = 'q-good';
-  } else if (speed < vientoMaximo) {
-    valor = direccionFavorable ? 7 : 4; text = '⚡ Moderado';
-    cls = direccionFavorable ? 'q-good' : 'q-fair';
-  } else if (speed < vientoMaximo + 5) {
-    valor = direccionFavorable ? 5 : 1; text = '⚠️ Fuerte';
-    cls = direccionFavorable ? 'q-fair' : 'q-poor';
-  } else {
-    valor = 0; text = '🔴 Muy Fuerte';
-    cls = 'q-epic';
-  }
-  
-  return { text, cls, value: valor, direccionFavorable };
-}
-
-// Calcular Vuelo Score
-function vueloScore(termica, vientoAltura, baseNube) {
-  if (!termica || !vientoAltura) return 0;
-  
-  let score = 0;
-  score += termica.value * 5;
-  score += vientoAltura.value * 3;
-  if (baseNube && baseNube > 1500) score += 2;
-  else if (baseNube && baseNube > 800) score += 1;
-  
-  return Math.min(10, Math.round(score / 2));
-}
-
-// Calidad del vuelo
-function calidadVuelo(score) {
-  if (score >= 9) return { text: 'XC ÉPICO', cls: 'score-epic', color: '#4cff82' };
-  if (score >= 7) return { text: 'XC BUENO', cls: 'score-bueno', color: '#f5c842' };
-  if (score >= 4) return { text: 'XC LOCAL', cls: 'score-surfable', color: '#3498db' };
-  return { text: 'MALO', cls: 'score-malo', color: '#e74c3c' };
-}
-
 // Dirección en texto
 function direccionAbreviatura(deg) {
   if (deg == null || isNaN(deg)) return '–';
@@ -129,24 +71,215 @@ function calcularVentanaVuelo() {
   }
 }
 
-// Obtener peligros de la zona
-function getPeligrosZona(spot) {
+// Obtener condiciones de la zona desde vueloConditions.js
+function getCondicionesZona(spot, tipo = 'good') {
   if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
-    const peligros = window.VUELO_THRESHOLDS[spot.condicionesRef]?.danger?.notes;
-    return peligros || 'Sin información de peligros específicos';
-  }
-  return 'Sin información de peligros específicos';
-}
-
-// Obtener condiciones épicas
-function getCondicionesEpicas(spot) {
-  if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
-    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.epic || null;
+    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.xc?.[tipo] || null;
   }
   return null;
 }
 
-// ===== FUNCIONES PARA OPEN-METEO (sin CORS) =====
+function getPeligrosZona(spot) {
+  if (window.VUELO_THRESHOLDS && spot.condicionesRef) {
+    return window.VUELO_THRESHOLDS[spot.condicionesRef]?.danger?.notes || null;
+  }
+  return null;
+}
+
+// ===== FUNCIONES DE ANÁLISIS EXPERTO =====
+
+// Evaluar viento en altura comparando con condiciones óptimas
+function evaluarVientoAltura(speed, dir, spot) {
+  if (speed == null) return { text: 'Sin datos', cls: 'q-flat', value: 0, direccionFavorable: false, match: 0 };
+  
+  const condiciones = getCondicionesZona(spot);
+  
+  let direccionesFavorables = ['N', 'NE', 'E', 'NW'];
+  let vientoOptimo = 12;
+  let vientoMaximo = 20;
+  
+  if (condiciones) {
+    if (condiciones.windDirections) direccionesFavorables = condiciones.windDirections;
+    if (condiciones.windSpeedMax) vientoOptimo = condiciones.windSpeedMax;
+  }
+  
+  const dirTxt = direccionAbreviatura(dir);
+  const direccionFavorable = direccionesFavorables.includes(dirTxt);
+  
+  // Calcular match percentage (0-100%)
+  let match = 0;
+  let valor = 0;
+  let cls = 'q-poor';
+  let text = `💨 ${Math.round(speed)}km/h`;
+
+  if (speed < 5) {
+    match = 30;
+    valor = 2;
+    text = '🌬️ Calma';
+    cls = direccionFavorable ? 'q-fair' : 'q-poor';
+  } else if (speed < 10) {
+    match = 80;
+    valor = 8;
+    text = '👍 Suave';
+    cls = 'q-good';
+  } else if (speed <= vientoOptimo + 2) {
+    match = 100;
+    valor = 10;
+    text = '⚡ Óptimo';
+    cls = 'q-epic';
+  } else if (speed < vientoOptimo + 5) {
+    match = 70;
+    valor = 7;
+    text = '👍 Moderado';
+    cls = 'q-good';
+  } else if (speed < vientoOptimo + 10) {
+    match = 40;
+    valor = 4;
+    text = '⚠️ Fuerte';
+    cls = 'q-fair';
+  } else {
+    match = 10;
+    valor = 1;
+    text = '🔴 Muy Fuerte';
+    cls = 'q-poor';
+  }
+  
+  // Penalizar dirección desfavorable
+  if (!direccionFavorable) {
+    match = Math.round(match * 0.5);
+    valor = Math.round(valor * 0.5);
+  }
+  
+  return { text, cls, value: valor, direccionFavorable, match };
+}
+
+// Evaluar base de nubes
+function evaluarBaseNube(baseNube, spot) {
+  if (!baseNube) return { match: 0, text: 'Sin datos' };
+  
+  const condiciones = getCondicionesZona(spot);
+  const baseOptima = condiciones?.cloudBaseMin || 1500;
+  
+  let match = 0;
+  let text = '';
+  
+  if (baseNube >= baseOptima + 500) {
+    match = 100;
+    text = 'Excelente ⬆️⬆️';
+  } else if (baseNube >= baseOptima) {
+    match = 90;
+    text = 'Buena ⬆️';
+  } else if (baseNube >= baseOptima - 300) {
+    match = 60;
+    text = 'Aceptable 🟡';
+  } else if (baseNube >= 800) {
+    match = 30;
+    text = 'Baja 🔴';
+  } else {
+    match = 10;
+    text = 'Muy baja ⚠️';
+  }
+  
+  return { match, text };
+}
+
+// Evaluar térmicas comparando con condiciones óptimas
+function evaluarTermicaExperta(radiacion, cape, spot) {
+  if (radiacion == null) return { match: 0, text: 'Sin datos', value: 0, cls: 'q-flat' };
+  
+  const condiciones = getCondicionesZona(spot);
+  const capeMinimo = condiciones?.capeMin || 200;
+  
+  let match = 0;
+  let text = '';
+  let value = 0;
+  let cls = 'q-poor';
+  
+  if (radiacion > 800 && cape > capeMinimo * 1.5) {
+    match = 100;
+    text = '💥 Explosivas';
+    value = 10;
+    cls = 'q-epic';
+  } else if (radiacion > 700 && cape > capeMinimo) {
+    match = 85;
+    text = '🔥 Muy fuertes';
+    value = 8;
+    cls = 'q-good';
+  } else if (radiacion > 500 && cape > capeMinimo * 0.7) {
+    match = 70;
+    text = '👍 Fuertes';
+    value = 6;
+    cls = 'q-fair';
+  } else if (radiacion > 300 && cape > 100) {
+    match = 50;
+    text = '⚪ Moderadas';
+    value = 4;
+    cls = 'q-poor';
+  } else {
+    match = 20;
+    text = '💨 Débiles';
+    value = 2;
+    cls = 'q-flat';
+  }
+  
+  return { match, text, value, cls };
+}
+
+// Evaluar visibilidad
+function evaluarVisibilidad(visibilidad, spot) {
+  if (!visibilidad) return { match: 0, text: 'Sin datos' };
+  
+  const condiciones = getCondicionesZona(spot);
+  const visibilidadMinima = condiciones?.visibilityMin || 20;
+  
+  let match = 0;
+  let text = '';
+  
+  if (visibilidad >= 40) {
+    match = 100;
+    text = 'Excelente 👁️';
+  } else if (visibilidad >= 30) {
+    match = 90;
+    text = 'Muy buena';
+  } else if (visibilidad >= 20) {
+    match = 70;
+    text = 'Buena';
+  } else if (visibilidad >= 10) {
+    match = 40;
+    text = 'Regular';
+  } else {
+    match = 10;
+    text = 'Mala ⚠️';
+  }
+  
+  return { match, text };
+}
+
+// Calcular Vuelo Score experto
+function vueloScoreExperto(termica, viento, baseNube, visibilidad) {
+  if (!termica || !viento) return 0;
+  
+  // Pesos: 40% térmicas, 30% viento, 20% base nube, 10% visibilidad
+  let score = 0;
+  score += (termica.match || 0) * 0.4;
+  score += (viento.match || 0) * 0.3;
+  score += (baseNube.match || 0) * 0.2;
+  score += (visibilidad.match || 0) * 0.1;
+  
+  return Math.min(10, Math.round(score / 10));
+}
+
+// Calidad del vuelo
+function calidadVuelo(score) {
+  if (score >= 9) return { text: 'XC ÉPICO', cls: 'score-epic', color: '#4cff82' };
+  if (score >= 7) return { text: 'XC BUENO', cls: 'score-bueno', color: '#f5c842' };
+  if (score >= 5) return { text: 'XC LOCAL', cls: 'score-surfable', color: '#3498db' };
+  return { text: 'MALO', cls: 'score-malo', color: '#e74c3c' };
+}
+
+// ===== FUNCIONES PARA APIs =====
+
+// Open-Meteo (datos de altura, CAPE, térmicas)
 async function fetchOpenMeteoData(lat, lon) {
   try {
     const params = new URLSearchParams({
@@ -166,49 +299,91 @@ async function fetchOpenMeteoData(lat, lon) {
   }
 }
 
-function procesarDatosOpenMeteo(data, spot) {
-  if (!data || !data.hourly) return null;
-  
-  // Tomar la hora actual
-  const horaActual = new Date().getHours();
-  const idx = horaActual;
-  
-  const temp = data.hourly.temperature_2m[idx];
-  const humedad = data.hourly.relativehumidity_2m[idx];
-  const dewpoint = data.hourly.dewpoint_2m[idx];
-  const radiacion = data.hourly.shortwave_radiation[idx];
-  const cape = data.hourly.cape[idx];
-  const cloudCover = data.hourly.cloudcover[idx];
-  const viento10 = data.hourly.windspeed_10m[idx];
-  const dirViento = data.hourly.winddirection_10m[idx];
-  const viento80 = data.hourly.windspeed_80m ? data.hourly.windspeed_80m[idx] : viento10 * 1.5;
-  const dir80 = data.hourly.winddirection_80m ? data.hourly.winddirection_80m[idx] : dirViento;
-  
-  const baseNube = calcularBaseNube(temp, dewpoint);
-  const termica = evaluarTermica(radiacion, cape, cloudCover);
-  const vientoAltura = evaluarVientoAltura(viento80, dir80, spot);
-  const score = vueloScore(termica, vientoAltura, baseNube);
-  
-  return {
-    actual: {
-      temp: Math.round(temp * 10) / 10,
-      hum: Math.round(humedad),
-      cloud: Math.round(cloudCover),
-      rad: Math.round(radiacion),
-      viento10: Math.round(viento10),
-      dir10: Math.round(dirViento),
-      viento80: Math.round(viento80),
-      dir80: Math.round(dir80),
-      cape: Math.round(cape),
-      baseNube
-    },
-    termica,
-    vientoAltura,
-    score,
-    ventanaVuelo: calcularVentanaVuelo(),
-    peligros: getPeligrosZona(spot),
-    condicionesEpicas: getCondicionesEpicas(spot)
-  };
+// OpenWeatherMap (visibilidad, rachas, y datos actuales)
+async function fetchOWMData(lat, lon) {
+  try {
+    const response = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${OPENWEATHER_API_KEY}&units=metric`
+    );
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('Error fetching OpenWeatherMap data:', error);
+    return null;
+  }
+}
+
+// Procesar datos combinados
+async function procesarDatosSpot(spot) {
+  try {
+    // Obtener datos de ambas APIs
+    const [meteoData, owmData] = await Promise.all([
+      fetchOpenMeteoData(spot.lat, spot.lon),
+      fetchOWMData(spot.lat, spot.lon)
+    ]);
+    
+    if (!meteoData || !meteoData.hourly) return null;
+    
+    // Hora actual
+    const horaActual = new Date().getHours();
+    const idx = horaActual;
+    
+    // Datos de Open-Meteo
+    const temp = meteoData.hourly.temperature_2m[idx];
+    const humedad = meteoData.hourly.relativehumidity_2m[idx];
+    const dewpoint = meteoData.hourly.dewpoint_2m[idx];
+    const radiacion = meteoData.hourly.shortwave_radiation[idx];
+    const cape = meteoData.hourly.cape[idx];
+    const cloudCover = meteoData.hourly.cloudcover[idx];
+    const viento10 = meteoData.hourly.windspeed_10m[idx];
+    const dirViento = meteoData.hourly.winddirection_10m[idx];
+    const viento80 = meteoData.hourly.windspeed_80m ? meteoData.hourly.windspeed_80m[idx] : viento10 * 1.5;
+    const dir80 = meteoData.hourly.winddirection_80m ? meteoData.hourly.winddirection_80m[idx] : dirViento;
+    
+    // Datos de OpenWeatherMap
+    const visibilidad = owmData?.visibility ? owmData.visibility / 1000 : null; // en km
+    const racha = owmData?.wind?.gust || null;
+    const presion = owmData?.main?.pressure || null;
+    
+    // Cálculos
+    const baseNube = calcularBaseNube(temp, dewpoint);
+    const termica = evaluarTermicaExperta(radiacion, cape, spot);
+    const vientoAltura = evaluarVientoAltura(viento80, dir80, spot);
+    const baseNubeEval = evaluarBaseNube(baseNube, spot);
+    const visibilidadEval = evaluarVisibilidad(visibilidad, spot);
+    
+    // Vuelo Score experto
+    const score = vueloScoreExperto(termica, vientoAltura, baseNubeEval, visibilidadEval);
+    
+    return {
+      actual: {
+        temp: Math.round(temp * 10) / 10,
+        hum: Math.round(humedad),
+        cloud: Math.round(cloudCover),
+        rad: Math.round(radiacion),
+        viento10: Math.round(viento10),
+        dir10: Math.round(dirViento),
+        viento80: Math.round(viento80),
+        dir80: Math.round(dir80),
+        cape: Math.round(cape),
+        baseNube,
+        visibilidad: visibilidad ? Math.round(visibilidad * 10) / 10 : null,
+        racha: racha ? Math.round(racha) : null,
+        presion
+      },
+      termica,
+      viento: vientoAltura,
+      baseNube: baseNubeEval,
+      visibilidad: visibilidadEval,
+      score,
+      ventanaVuelo: calcularVentanaVuelo(),
+      condicionesOptimas: getCondicionesZona(spot, 'epic'),
+      peligros: getPeligrosZona(spot)
+    };
+  } catch (error) {
+    console.error(`Error procesando ${spot.nombre}:`, error);
+    return null;
+  }
 }
 
 // ===== GENERAR DATOS SIMULADOS (FALLBACK) =====
@@ -224,11 +399,14 @@ function generarDatosSimuladosParaSpot(spot) {
   const viento10 = 5 + Math.random() * 15;
   const viento80 = viento10 * (1.2 + Math.random() * 0.5);
   const dirViento = Math.random() * 360;
+  const visibilidad = 20 + Math.random() * 30;
   
   const baseNube = calcularBaseNube(temp, dewpoint);
-  const termica = evaluarTermica(radiacion, cape, cloudCover);
+  const termica = evaluarTermicaExperta(radiacion, cape, spot);
   const vientoAltura = evaluarVientoAltura(viento80, dirViento, spot);
-  const score = vueloScore(termica, vientoAltura, baseNube);
+  const baseNubeEval = evaluarBaseNube(baseNube, spot);
+  const visibilidadEval = evaluarVisibilidad(visibilidad, spot);
+  const score = vueloScoreExperto(termica, vientoAltura, baseNubeEval, visibilidadEval);
   
   return {
     actual: {
@@ -241,23 +419,27 @@ function generarDatosSimuladosParaSpot(spot) {
       viento80: Math.round(viento80),
       dir80: Math.round(dirViento + (Math.random() * 30 - 15)),
       cape: Math.round(cape),
-      baseNube
+      baseNube,
+      visibilidad: Math.round(visibilidad * 10) / 10
     },
     termica,
-    vientoAltura,
+    viento: vientoAltura,
+    baseNube: baseNubeEval,
+    visibilidad: visibilidadEval,
     score,
     ventanaVuelo: calcularVentanaVuelo(),
-    peligros: getPeligrosZona(spot),
-    condicionesEpicas: getCondicionesEpicas(spot)
+    condicionesOptimas: getCondicionesZona(spot, 'epic'),
+    peligros: getPeligrosZona(spot)
   };
 }
 
 // ===== CARGA PRINCIPAL =====
 async function cargarTodo() {
   document.getElementById('statusBar').innerHTML =
-    `<div class="spill loading"><span class="sdot"></span>Cargando datos de Open-Meteo...</div>`;
+    `<div class="spill loading"><span class="sdot"></span>Cargando datos de Open-Meteo + OpenWeatherMap...</div>`;
 
   let errores = 0;
+  let exitos = 0;
   datos = {};
   
   for (let i = 0; i < ZONAS.length; i++) {
@@ -267,10 +449,11 @@ async function cargarTodo() {
       document.getElementById('statusBar').innerHTML =
         `<div class="spill loading"><span class="sdot"></span>Cargando ${spot.nombre} (${i+1}/${ZONAS.length})...</div>`;
       
-      const meteoData = await fetchOpenMeteoData(spot.lat, spot.lon);
+      const spotData = await procesarDatosSpot(spot);
       
-      if (meteoData) {
-        datos[spot.id] = procesarDatosOpenMeteo(meteoData, spot);
+      if (spotData) {
+        datos[spot.id] = spotData;
+        exitos++;
       } else {
         datos[spot.id] = generarDatosSimuladosParaSpot(spot);
         errores++;
@@ -285,13 +468,13 @@ async function cargarTodo() {
       errores++;
     }
     
+    // Pequeña pausa para no saturar APIs
     await new Promise(r => setTimeout(r, 300));
   }
   
-  const ok = ZONAS.length - errores;
   document.getElementById('statusBar').innerHTML = errores === 0
-    ? `<div class="spill ok"><span class="sdot"></span>${ZONAS.length} zonas · Datos actualizados</div>`
-    : `<div class="spill ok"><span class="sdot"></span>${ok}/${ZONAS.length} zonas OK · ${errores} con fallback</div>`;
+    ? `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas · APIs combinadas OK</div>`
+    : `<div class="spill ok"><span class="sdot"></span>${exitos}/${ZONAS.length} zonas OK · ${errores} con fallback</div>`;
   
   document.getElementById('lastUpd').textContent =
     'Actualizado ' + new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -305,19 +488,24 @@ function renderCard(spot, d) {
   
   const act = d.actual;
   const scoreInfo = calidadVuelo(d.score);
-  const termica = d.termica;
-  const vientoAlt = d.vientoAltura;
+  
+  // Determinar clase del borde según el score
+  let borderClass = '';
+  if (d.score >= 7) borderClass = 'q-epic';
+  else if (d.score >= 5) borderClass = 'q-fair';
+  else borderClass = 'q-poor';
 
-  return `<div class="pcard" id="card-${spot.id}">
+  return `<div class="pcard ${borderClass}" id="card-${spot.id}">
     <div class="chead">
       <div>
         <h3>${spot.nombre}</h3>
         <div class="cprov"><i class="fa fa-location-dot"></i>${spot.provincia} (${spot.elevacion}m)</div>
-        <div class="csrc">Open-Meteo · Vuelo</div>
+        <div class="csrc">Open-Meteo + OpenWeatherMap</div>
       </div>
-      <span class="qbadge ${termica.cls}" title="Potencial térmico">${termica.text}</span>
+      <span class="qbadge ${d.termica.cls}" title="Potencial térmico">${d.termica.text}</span>
     </div>
 
+    <!-- VUELO SCORE -->
     <div class="surf-score" style="margin-bottom:0;">
       <div class="score-circle ${scoreInfo.cls}" style="border-color:${scoreInfo.color}">${d.score}</div>
       <div class="score-info">
@@ -327,55 +515,82 @@ function renderCard(spot, d) {
       </div>
     </div>
 
+    <!-- MÉTRICAS CLAVE -->
     <div class="srow">
       <div class="sbox"><div class="sv c-ola">${act.temp ?? '–'}°</div><div class="sl">Temp</div></div>
       <div class="sbox"><div class="sv c-per">${act.rad ?? '–'}</div><div class="sl">Rad. <span class="su">W/m²</span></div></div>
       <div class="sbox"><div class="sv c-wind">${act.viento10 ?? '–'}</div><div class="sl">Viento 10m</div></div>
-      <div class="sbox"><div class="sv c-temp" style="color:${vientoAlt.cls === 'q-poor' ? 'var(--rojo)' : 'var(--orange)'}">${act.viento80 ?? '–'}</div><div class="sl">Viento 80m</div></div>
+      <div class="sbox"><div class="sv c-temp">${act.viento80 ?? '–'}</div><div class="sl">Viento 80m</div></div>
     </div>
 
+    <!-- ANÁLISIS XCOptimizer 2.0 -->
     <div class="xc-card">
       <div class="xc-row">
         <span class="xc-label">💨 Viento 80m:</span>
-        <span class="xc-value ${vientoAlt.direccionFavorable ? 'favorable' : 'desfavorable'}">${direccionAbreviatura(act.dir80)} ${act.viento80}km/h</span>
+        <span class="xc-value ${d.viento.direccionFavorable ? 'favorable' : 'desfavorable'}">
+          ${direccionAbreviatura(act.dir80)} ${act.viento80}km/h (${d.viento.match}%)
+        </span>
       </div>
       <div class="xc-row">
-        <span class="xc-label">☁️ Nubosidad:</span>
-        <span class="xc-value">${act.cloud}%</span>
+        <span class="xc-label">☁️ Base nube:</span>
+        <span class="xc-value" style="color:${d.baseNube.match > 70 ? '#4cff82' : d.baseNube.match > 40 ? 'var(--gold)' : 'var(--rojo)'}">
+          ${act.baseNube ?? '–'}m (${d.baseNube.match}%)
+        </span>
       </div>
       <div class="xc-row">
-        <span class="xc-label">🔥 CAPE:</span>
-        <span class="xc-value">${act.cape} J/kg</span>
+        <span class="xc-label">🔥 Térmicas:</span>
+        <span class="xc-value ${d.termica.cls}">${d.termica.match}%</span>
+      </div>
+      <div class="xc-row">
+        <span class="xc-label">👁️ Visibilidad:</span>
+        <span class="xc-value">${act.visibilidad ?? '–'}km (${d.visibilidad.match}%)</span>
       </div>
       <div class="xc-row">
         <span class="xc-label">⏱️ Ventana:</span>
         <span class="xc-value">${d.ventanaVuelo}</span>
       </div>
+      ${act.racha ? `
       <div class="xc-row">
-        <span class="xc-label">⬆️ Base:</span>
-        <span class="xc-value" style="color:var(--azul-cian)">${act.baseNube ?? '–'}m</span>
+        <span class="xc-label">💨 Rachas:</span>
+        <span class="xc-value">${act.racha} km/h</span>
       </div>
+      ` : ''}
     </div>
 
-    ${d.condicionesEpicas ? `
+    <!-- CONDICIONES ÓPTIMAS (EPIC) -->
+    ${d.condicionesOptimas ? `
     <div class="xc-card" style="border-left-color: #4cff82; margin-top: 5px;">
       <div class="xc-row">
         <span class="xc-label">🏆 Condición épica:</span>
       </div>
-      <div class="xc-row" style="font-size: 0.7rem; color: var(--muted);">
-        ${d.condicionesEpicas.description}
+      <div class="xc-row" style="font-size: 0.7rem; color: var(--muted); flex-wrap: wrap;">
+        ${d.condicionesOptimas.description}
+      </div>
+      <div class="xc-row" style="font-size: 0.65rem; margin-top: 5px;">
+        <span>🎯 Viento: ${d.condicionesOptimas.windDirections?.join('/')} ${d.condicionesOptimas.windSpeedMax}km/h · Base >${d.condicionesOptimas.cloudBaseMin}m</span>
       </div>
     </div>
     ` : ''}
 
+    <!-- PELIGROS -->
     ${d.peligros ? `
     <div class="xc-card" style="border-left-color: var(--rojo); margin-top: 5px;">
       <div class="xc-row">
         <span class="xc-label">⚠️ Peligros:</span>
-        <span class="xc-value" style="color: var(--rojo); font-size: 0.7rem;">${d.peligros}</span>
+      </div>
+      <div class="xc-row" style="font-size: 0.7rem; color: var(--rojo);">
+        ${d.peligros}
       </div>
     </div>
     ` : ''}
+
+    <!-- MATCH GLOBAL -->
+    <div class="cfoot">
+      <div class="stars">Match: ${Math.round((d.termica.match + d.viento.match + d.baseNube.match + d.visibilidad.match) / 4)}%</div>
+      <a class="mlink" href="https://maps.google.com/?q=${encodeURIComponent(spot.nombre+' '+spot.provincia)}" target="_blank">
+        <i class="fa fa-map-location-dot"></i> Ver mapa
+      </a>
+    </div>
   </div>`;
 }
 
@@ -390,11 +605,15 @@ function renderGrid() {
   if (sort === 'score') {
     lista.sort((a, b) => (datos[b.id]?.score ?? 0) - (datos[a.id]?.score ?? 0));
   } else if (sort === 'termica') {
-    lista.sort((a, b) => (datos[b.id]?.termica?.value ?? 0) - (datos[a.id]?.termica?.value ?? 0));
+    lista.sort((a, b) => (datos[b.id]?.termica?.match ?? 0) - (datos[a.id]?.termica?.match ?? 0));
+  } else if (sort === 'match') {
+    const getAvgMatch = (d) => d ? (d.termica.match + d.viento.match + d.baseNube.match + d.visibilidad.match) / 4 : 0;
+    lista.sort((a, b) => getAvgMatch(datos[b.id]) - getAvgMatch(datos[a.id]));
   }
 
   document.getElementById('pgrid').innerHTML = lista.map(p => renderCard(p, datos[p.id])).join('');
 
+  // Actualizar stats del hero
   const loaded = Object.values(datos).filter(d => d.score);
   document.getElementById('sSpots').textContent = ZONAS.length;
   document.getElementById('sEpic').textContent = loaded.filter(d => d.score >= 9).length;
@@ -458,7 +677,7 @@ function setVista(v) {
 
 function cerrarMapa() { setVista('lista'); }
 
-// ===== MAPA =====
+// ===== MAPA CON CAPAS DE OPENWEATHERMAP =====
 function initMapa() {
   if (map) return;
   map = L.map('mapaLeaflet').setView([36.5, -5.5], 8);
@@ -467,6 +686,67 @@ function initMapa() {
   
   markersLayer = L.layerGroup().addTo(map);
   actualizarMarcadoresMapa();
+}
+
+function setLayer(tipo, btn) {
+  document.querySelectorAll('.lpill').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  
+  if (!map) return;
+  
+  // Eliminar todas las capas meteorológicas
+  if (cloudsLayer) map.removeLayer(cloudsLayer);
+  if (precipLayer) map.removeLayer(precipLayer);
+  if (windLayer) map.removeLayer(windLayer);
+  if (tempLayer) map.removeLayer(tempLayer);
+  
+  if (tipo === 'sat') {
+    document.getElementById('mapLegend').innerHTML =
+      `<div class="lt">SATÉLITE</div>
+       <div class="leg-item">🌍 Imagen satélite</div>`;
+       
+  } else if (tipo === 'clouds') {
+    cloudsLayer = L.tileLayer(
+      `https://tile.openweathermap.org/map/clouds_new/{z}/{x}/{y}.png?appid=${OPENWEATHER_API_KEY}`,
+      { opacity: 0.7, attribution: '© OpenWeatherMap' }
+    );
+    cloudsLayer.addTo(map);
+    document.getElementById('mapLegend').innerHTML =
+      `<div class="lt">NUBOSIDAD</div>
+       <div class="leg-item">☁️ Cobertura de nubes</div>`;
+       
+  } else if (tipo === 'precip') {
+    precipLayer = L.tileLayer(
+      `https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=${OPENWEATHER_API_KEY}`,
+      { opacity: 0.6, attribution: '© OpenWeatherMap' }
+    );
+    precipLayer.addTo(map);
+    document.getElementById('mapLegend').innerHTML =
+      `<div class="lt">PRECIPITACIÓN</div>
+       <div class="leg-item"><span style="background:#00aaff;">█</span> Débil</div>
+       <div class="leg-item"><span style="background:#0066ff;">█</span> Moderada</div>
+       <div class="leg-item"><span style="background:#0000cc;">█</span> Fuerte</div>`;
+       
+  } else if (tipo === 'wind') {
+    windLayer = L.tileLayer(
+      `https://tile.openweathermap.org/map/wind_new/{z}/{x}/{y}.png?appid=${OPENWEATHER_API_KEY}`,
+      { opacity: 0.6, attribution: '© OpenWeatherMap' }
+    );
+    windLayer.addTo(map);
+    document.getElementById('mapLegend').innerHTML =
+      `<div class="lt">VIENTO</div>
+       <div class="leg-item">💨 Velocidad en superficie</div>`;
+       
+  } else if (tipo === 'temp') {
+    tempLayer = L.tileLayer(
+      `https://tile.openweathermap.org/map/temp_new/{z}/{x}/{y}.png?appid=${OPENWEATHER_API_KEY}`,
+      { opacity: 0.6, attribution: '© OpenWeatherMap' }
+    );
+    tempLayer.addTo(map);
+    document.getElementById('mapLegend').innerHTML =
+      `<div class="lt">TEMPERATURA</div>
+       <div class="leg-item">🌡️ Superficie</div>`;
+  }
 }
 
 function actualizarMarcadoresMapa() {
@@ -480,7 +760,7 @@ function actualizarMarcadoresMapa() {
     let color = '#8fbc8f';
     if (d.score >= 9) color = '#4cff82';
     else if (d.score >= 7) color = '#f5c842';
-    else if (d.score >= 4) color = '#3498db';
+    else if (d.score >= 5) color = '#3498db';
     else color = '#e74c3c';
     
     const mk = L.circleMarker([p.lat, p.lon], {
@@ -493,33 +773,11 @@ function actualizarMarcadoresMapa() {
     
     mk.bindPopup(`<b>${p.nombre}</b><br>
       Vuelo Score <b>${d.score}/10</b><br>
-      Térmica: ${d.termica.text}<br>
-      Viento 80m: ${direccionAbreviatura(d.actual.dir80)} ${d.actual.viento80}km/h<br>
+      Térmica: ${d.termica.match}%<br>
+      Viento: ${d.viento.match}%<br>
+      Base: ${d.baseNube.match}%<br>
       <span style="color:#8fbc8f">${p.provincia}</span>`);
   });
-}
-
-function setLayer(tipo, btn) {
-  document.querySelectorAll('.lpill').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-  
-  if (!map) return;
-  
-  if (tipo === 'clouds') {
-    if (!cloudsLayer) {
-      cloudsLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        opacity: 0.3
-      });
-    }
-    if (!map.hasLayer(cloudsLayer)) map.addLayer(cloudsLayer);
-    document.getElementById('mapLegend').innerHTML =
-      `<div class="lt">NUBOSIDAD</div>
-       <div class="leg-item">☁️ Visualización aproximada</div>`;
-  } else {
-    if (cloudsLayer && map.hasLayer(cloudsLayer)) map.removeLayer(cloudsLayer);
-    document.getElementById('mapLegend').innerHTML =
-      `<div class="lt">SATÉLITE</div><div class="leg-item">🌍 Imagen satélite</div>`;
-  }
 }
 
 // ===== RECARGAR =====
